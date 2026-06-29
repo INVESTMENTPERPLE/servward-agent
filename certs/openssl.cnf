@@ -1,0 +1,20 @@
+[req]
+default_bits       = 2048
+prompt             = no
+default_md         = sha256
+distinguished_name = dn
+x509_extensions    = v3_ca
+
+[dn]
+CN = NtfyControl Server
+
+[v3_ca]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints       = critical,CA:TRUE
+keyUsage               = critical,digitalSignature,keyCertSign
+subjectAltName         = @alt_names
+
+[alt_names]
+IP.1 = 192.168.1.50
+IP.2 = 100.64.0.1

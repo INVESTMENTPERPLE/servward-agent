@@ -1,0 +1,17 @@
+# ── Cloudflare Tunnel → broker NtfyControl ─────────────────────────────────
+# Coloca este archivo en /etc/cloudflared/config.yml
+#
+# Sustituye:
+#   <TUNNEL_ID>          → el id que devuelve `cloudflared tunnel create ntfy`
+#   ntfy.tudominio.com   → el hostname público que quieras usar
+#
+# El túnel reenvía el tráfico HTTPS público a tu broker local en HTTP.
+
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: ntfy.tudominio.com
+    service: http://127.0.0.1:2586
+  # Todo lo demás se rechaza
+  - service: http_status:404

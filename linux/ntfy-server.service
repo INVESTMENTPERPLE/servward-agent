@@ -1,0 +1,28 @@
+[Unit]
+Description=NtfyControl broker (HTTP/SSE pub-sub) behind Cloudflare Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Usuario sin privilegios (lo crea setup_linux.sh)
+User=ntfy
+Group=ntfy
+# Código del broker
+WorkingDirectory=/opt/ntfy
+ExecStart=/usr/bin/python3 /opt/ntfy/server.py
+# Variables (token, bind, puerto)
+EnvironmentFile=/etc/ntfy/ntfy.env
+Restart=always
+RestartSec=3
+# Endurecimiento básico
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# PrivateTmp ya da un /tmp privado y escribible para los device tokens.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

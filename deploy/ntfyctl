@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# ntfyctl — gestión unificada del broker (server.py) y el agente de NtfyControl.
+# Mismo comando en Mac (launchd) y Linux (systemd).
+#
+#   ntfyctl status            estado de broker + agente
+#   ntfyctl restart           reinicia ambos
+#   ntfyctl restart agent     reinicia solo el agente
+#   ntfyctl start|stop [who]  arranca / para  (who: broker | agent | all)
+#   ntfyctl logs [who]        últimas líneas de log
+#   ntfyctl info              rutas, puerto, servicios y topics
+#
+# "who" por defecto = all.
+# ─────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+CMD="${1:-help}"
+WHO="${2:-all}"
+OS="$(uname -s)"
+
+if [ "$OS" = "Darwin" ]; then
+  PLATFORM="macOS (launchd)"
+  SVC_BROKER="com.espymelab.ntfy.server"
+  SVC_AGENT="com.espymelab.ntfy.agent"
+  RUNTIME_DIR="${NTFY_HOME:-/usr/local/ntfy}"
+  ENV_FILE="$RUNTIME_DIR/ntfy.env"
+  LOG_DIR="$HOME/Library/Logs/ntfy"
+  UID_="$(id -u)"
+
+  _do() { # action label
+    local target="gui/$UID_/$2"
+    case "$1" in
+      start)   launchctl kickstart    "$target" 2>/dev/null || true ;;
+      stop)    launchctl bootout      "$target" 2>/dev/null || true ;;
+      restart) launchctl kickstart -k "$target" ;;
+      status)  launchctl print "$target" 2>/dev/null | grep -E "state =|pid =" | head -2 \
+                 || echo "  (no cargado)" ;;
+      logs)    local f="$LOG_DIR/$3.log"
+               [ -f "$f" ] && tail -n 30 "$f" || echo "  (sin log en $f)" ;;
+    esac
+  }
+else
+  PLATFORM="Linux (systemd)"
+  SVC_BROKER="ntfy-server"
+  SVC_AGENT="ntfy-agent"
+  RUNTIME_DIR="${NTFY_HOME:-/opt/ntfy}"
+  ENV_FILE="${NTFY_ENV:-/etc/ntfy/ntfy.env}"
+
+  _do() { # action label _
+    case "$1" in
+      start)   sudo systemctl start   "$2" ;;
+      stop)    sudo systemctl stop    "$2" ;;
+      restart) sudo systemctl restart "$2" ;;
+      status)  systemctl --no-pager status "$2" 2>/dev/null | grep -E "Active:|Main PID:" || echo "  (no encontrado)" ;;
+      logs)    journalctl -u "$2" -n 30 --no-pager ;;
+    esac
+  }
+fi
+
+# Devuelve "label nombre-corto" por línea según WHO
+_targets() {
+  case "$WHO" in
+    broker) printf '%s broker\n' "$SVC_BROKER" ;;
+    agent)  printf '%s agent\n'  "$SVC_AGENT" ;;
+    all)    printf '%s broker\n' "$SVC_BROKER"; printf '%s agent\n' "$SVC_AGENT" ;;
+    *) echo "who inválido: $WHO (usa broker|agent|all)" >&2; exit 1 ;;
+  esac
+}
+
+case "$CMD" in
+  start|stop|restart|status|logs)
+    _targets | while read -r label short; do
+      echo "── $short ($label) ──"
+      _do "$CMD" "$label" "$short"
+      echo
+    done
+    ;;
+  info)
+    echo "Plataforma : $PLATFORM"
+    echo "Runtime    : $RUNTIME_DIR"
+    echo "Env        : $ENV_FILE"
+    echo "Broker     : $SVC_BROKER   (HTTP/SSE en localhost:${NTFY_PORT:-2586})"
+    echo "Agente     : $SVC_AGENT"
+    if [ -f "$ENV_FILE" ]; then
+      echo "Topics     : $(grep -E '^NTFY_(CMD|RESP)_TOPIC=' "$ENV_FILE" 2>/dev/null | sed 's/^/  /' | tr '\n' ' ' )"
+    fi
+    ;;
+  help|*)
+    cat <<EOF
+ntfyctl — gestión de NtfyControl ($PLATFORM)
+
+  ntfyctl status            estado de broker + agente
+  ntfyctl restart [who]     reinicia (who: broker | agent | all)
+  ntfyctl start|stop [who]  arranca / para
+  ntfyctl logs [who]        últimas líneas de log
+  ntfyctl info              rutas, puerto, servicios y topics
+EOF
+    ;;
+esac

@@ -1,0 +1,31 @@
+# Credenciales y claves — NUNCA subir
+.ntfy_token
+*.pem
+*.cer
+*.p8
+*.key
+*.certSigningRequest
+*.json
+
+# Logs y temporales
+*.log
+__pycache__/
+.DS_Store
+
+# Seguridad / personales
+*.pdf
+*.crt
+xcuserdata/
+start_agent.sh
+start_server.sh
+ntfy_launch.command
+restart_agent.command
+
+# Seguridad / personales
+*.pdf
+*.crt
+xcuserdata/
+start_agent.sh
+start_server.sh
+ntfy_launch.command
+restart_agent.command
