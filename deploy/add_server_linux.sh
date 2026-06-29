@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Alta de un servidor Linux en NtfyControl: broker + agente + ntfyctl,
+# Alta de un servidor Linux en Servward: broker + agente + ntfyctl,
 # con topics ÚNICOS, en una sola pasada.
 #
 #   sudo bash deploy/add_server_linux.sh <nombre> [token]
@@ -69,7 +69,7 @@ chown root:ntfy /etc/ntfy/ntfy.env; chmod 640 /etc/ntfy/ntfy.env
 echo "==> 4/5 servicios systemd"
 cat > /etc/systemd/system/ntfy-server.service <<'EOF'
 [Unit]
-Description=NtfyControl broker (HTTP/SSE)
+Description=Servward broker (HTTP/SSE)
 After=network-online.target
 Wants=network-online.target
 [Service]
@@ -85,7 +85,7 @@ WantedBy=multi-user.target
 EOF
 cat > /etc/systemd/system/ntfy-agent.service <<'EOF'
 [Unit]
-Description=NtfyControl Linux agent
+Description=Servward Linux agent
 After=network-online.target ntfy-server.service
 Wants=network-online.target
 [Service]

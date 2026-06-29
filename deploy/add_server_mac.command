@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Alta de un Mac en NtfyControl: broker + agente (launchd) + ntfyctl, topics
+# Alta de un Mac en Servward: broker + agente (launchd) + ntfyctl, topics
 # ÚNICOS, en una sola pasada. Pensado para un Mac NUEVO.
 #
 #   bash deploy/add_server_mac.command <nombre> [token]

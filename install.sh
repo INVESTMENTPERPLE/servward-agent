@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# NtfyControl — instalación y actualización en UN solo comando.
+# Servward — instalación y actualización en UN solo comando.
 #
 #   curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash
 #

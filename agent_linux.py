@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NtfyControl — Agente para Linux
+Servward — Agente para Linux
 Escucha comandos del broker (SSE) y los ejecuta en el servidor Linux.
 Mismo protocolo que agent.py (macOS), pero con comandos Linux.
 
@@ -413,6 +413,6 @@ def listen_loop():
             log(f"Desconectado ({e}) — reconecto en {RECONNECT_S}s."); time.sleep(RECONNECT_S)
 
 if __name__ == "__main__":
-    log(f"NtfyControl Agente Linux — {len(COMMAND_MAP)} comandos")
+    log(f"Servward Agente Linux — {len(COMMAND_MAP)} comandos")
     log(f"Broker: {NTFY_BASE}  topics: {CMD_TOPIC} / {RESP_TOPIC}")
     listen_loop()

@@ -1,4 +1,4 @@
-# NtfyControl — broker en un servidor Linux (con Cloudflare Tunnel)
+# Servward — broker en un servidor Linux (con Cloudflare Tunnel)
 
 Monta el broker `server.py` en tu Linux de producción y exponlo por Cloudflare
 Tunnel. El Mac (agent.py), el iPhone (app) y "lo demás" se conectan a él.

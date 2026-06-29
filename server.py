@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NtfyControl — Pub-Sub Server (Hardened)
+Servward — Pub-Sub Server (Hardened)
 HTTPS · Token Bearer · Rate Limiting · IP Binding · Request Size Limit
 
 Requisitos previos:

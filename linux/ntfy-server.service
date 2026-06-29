@@ -1,5 +1,5 @@
 [Unit]
-Description=NtfyControl broker (HTTP/SSE pub-sub) behind Cloudflare Tunnel
+Description=Servward broker (HTTP/SSE pub-sub) behind Cloudflare Tunnel
 After=network-online.target
 Wants=network-online.target
 

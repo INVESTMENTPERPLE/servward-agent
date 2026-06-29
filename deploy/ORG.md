@@ -1,4 +1,4 @@
-# NtfyControl — Organización del broker + agente
+# Servward — Organización del broker + agente
 
 Mapa claro de qué corre dónde y cómo gestionarlo con un solo comando (`ntfyctl`).
 

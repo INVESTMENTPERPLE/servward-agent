@@ -1,5 +1,5 @@
 #!/bin/bash
-# <swiftbar.title>NtfyControl Monitor</swiftbar.title>
+# <swiftbar.title>Servward Monitor</swiftbar.title>
 # <swiftbar.version>1.0</swiftbar.version>
 # <swiftbar.author>NFTY</swiftbar.author>
 # <swiftbar.refreshTime>60</swiftbar.refreshTime>

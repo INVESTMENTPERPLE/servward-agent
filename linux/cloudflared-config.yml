@@ -1,4 +1,4 @@
-# ── Cloudflare Tunnel → broker NtfyControl ─────────────────────────────────
+# ── Cloudflare Tunnel → broker Servward ─────────────────────────────────
 # Coloca este archivo en /etc/cloudflared/config.yml
 #
 # Sustituye:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  NtfyControl — Security Setup
+#  Servward — Security Setup
 #  Genera certs TLS, token fuerte y configura env vars.
 #  Ejecutar UNA VEZ en el Mac mini antes de arrancar server.py y agent.py.
 # =============================================================================
@@ -24,7 +24,7 @@ fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  NtfyControl Security Setup"
+echo "  Servward Security Setup"
 echo "  IP detectada: $LOCAL_IP"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
@@ -50,7 +50,7 @@ x509_extensions    = v3_req
 prompt             = no
 
 [req_dn]
-CN = NtfyControl
+CN = Servward
 O  = Local
 C  = US
 
@@ -77,7 +77,7 @@ FINGERPRINT=$(openssl x509 -in "$CERTS_DIR/server.crt" -fingerprint -sha256 -noo
 # ── 7. Escribir .ntfy_env ─────────────────────────────────────────────────────
 echo "▶ Escribiendo variables de entorno en $ENV_FILE..."
 cat > "$ENV_FILE" << EOF
-# NtfyControl environment — generado por setup_security.sh
+# Servward environment — generado por setup_security.sh
 # NO SUBIR A GIT NI COMPARTIR
 export NTFY_TOKEN="${NEW_TOKEN}"
 export NTFY_BIND="${LOCAL_IP}"
@@ -91,7 +91,7 @@ chmod 600 "$ENV_FILE"
 SOURCE_LINE="[ -f \"$ENV_FILE\" ] && source \"$ENV_FILE\""
 if ! grep -qF "$ENV_FILE" "$RC_FILE" 2>/dev/null; then
   echo "" >> "$RC_FILE"
-  echo "# NtfyControl security env" >> "$RC_FILE"
+  echo "# Servward security env" >> "$RC_FILE"
   echo "$SOURCE_LINE" >> "$RC_FILE"
   echo "▶ Añadida carga automática en $RC_FILE"
 else

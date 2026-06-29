@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────────
-# Instalador del broker NtfyControl (server.py) en un servidor Linux.
+# Instalador del broker Servward (server.py) en un servidor Linux.
 # Lo deja corriendo como servicio systemd, en HTTP sobre 127.0.0.1:2586,
 # pensado para exponerse por Cloudflare Tunnel.
 #

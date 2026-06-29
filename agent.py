@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NtfyControl — Agente Mac mini (Hardened + Extended Commands)
+Servward — Agente Mac mini (Hardened + Extended Commands)
 Lee comandos por SSE y publica respuestas. Token desde env var. HTTPS con
 verificación del certificado local cuando el servidor usa TLS.
 
@@ -783,7 +783,7 @@ def listen_loop():
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    log.info("NtfyControl Agent arrancando — %d comandos disponibles", len(COMMAND_MAP))
+    log.info("Servward Agent arrancando — %d comandos disponibles", len(COMMAND_MAP))
     log.info("Servidor: %s", NTFY_BASE)
     log.info("APNs cert: %s", APNS_CERT if os.path.isfile(APNS_CERT) else "NO ENCONTRADO")
 

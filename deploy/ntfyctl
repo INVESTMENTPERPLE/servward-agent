@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# ntfyctl — gestión unificada del broker (server.py) y el agente de NtfyControl.
+# ntfyctl — gestión unificada del broker (server.py) y el agente de Servward.
 # Mismo comando en Mac (launchd) y Linux (systemd).
 #
 #   ntfyctl status            estado de broker + agente
@@ -87,7 +87,7 @@ case "$CMD" in
     ;;
   help|*)
     cat <<EOF
-ntfyctl — gestión de NtfyControl ($PLATFORM)
+ntfyctl — gestión de Servward ($PLATFORM)
 
   ntfyctl status            estado de broker + agente
   ntfyctl restart [who]     reinicia (who: broker | agent | all)
