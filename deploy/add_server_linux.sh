@@ -106,12 +106,25 @@ systemctl enable --now ntfy-server ntfy-agent
 sleep 1
 ntfyctl status || true
 
+# ── Configuración empaquetada para la app (pegar / QR) ───────────────────────
+CONFIG_JSON=$(printf '{"name":"%s","cmd":"%s","resp":"%s","token":"%s"}' \
+  "$NAME" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN")
+CONFIG_B64=$(printf '%s' "$CONFIG_JSON" | base64 | tr -d '\n')
+DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}"
+
 cat <<EOF
 
 ────────────────────────────────────────────────────────────────────
 ✅ Servidor "$NAME" montado (broker + agente + ntfyctl).
 
-En la app → Ajustes → Añadir servidor:
+CONFIGURACIÓN RÁPIDA (recomendado):
+  En la app → Ajustes → «Pegar configuración» y pega este código:
+
+  $CONFIG_B64
+
+  (Incluye nombre, topics y token. Solo tendrás que añadir la URL.)
+
+O a mano → Ajustes → Añadir servidor:
   Nombre     : $NAME
   Órdenes    : $CMD_TOPIC
   Respuestas : $RESP_TOPIC
@@ -127,3 +140,11 @@ Para los botones de Reiniciar/Parar servicios necesitas además:
   - un sudoers para 'ntfy' (ver /etc/sudoers.d/ntfy-agent del primer Linux).
 ────────────────────────────────────────────────────────────────────
 EOF
+
+# QR opcional (escanéalo con la cámara del iPhone → abre la app y la configura)
+if command -v qrencode >/dev/null 2>&1; then
+  echo "Escanea este QR con la cámara del iPhone:"
+  qrencode -t ANSIUTF8 "$DEEPLINK"
+else
+  echo "(Instala 'qrencode' para un QR escaneable en Debian/Ubuntu:  apt-get install -y qrencode)"
+fi

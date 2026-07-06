@@ -70,6 +70,7 @@ def cmd_check_status(_args: dict) -> dict:
     return {
         "hostname": platform.node(),
         "os":       f"{platform.system()} {platform.release()}",
+        "platform": "linux",
         "cpu_pct":  f"{psutil.cpu_percent(interval=0.5):.0f}",
         "ram_pct":  f"{mem.percent:.0f}",
         "disk_pct": f"{disk.percent:.0f}",

@@ -120,6 +120,7 @@ def cmd_check_status(_args: dict) -> dict:
         "disk_pct":   f"{disk.percent:.1f}%",
         "hostname":   platform.node(),
         "os":         platform.platform(terse=True),
+        "platform":   "mac",
     }
 
 def cmd_ping_service(_args: dict) -> dict:
