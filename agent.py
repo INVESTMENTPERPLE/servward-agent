@@ -478,7 +478,8 @@ def send_push(title: str, body: str, data: dict = None) -> bool:
         log.debug("No hay device tokens registrados — no se envía push")
         return False
 
-    payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"}}
+    payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default",
+               "category": "SW_ALERT"}}
     if data:
         payload["data"] = data
     payload_json = json.dumps(payload)
