@@ -289,6 +289,13 @@ def cmd_run_script(args: dict) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+def cmd_list_scripts(_args: dict) -> dict:
+    """Lista los scripts .sh de SCRIPTS_DIR (para el selector de la app)."""
+    if not os.path.isdir(SCRIPTS_DIR):
+        return {"scripts": "", "info": f"La carpeta {SCRIPTS_DIR} no existe todavía"}
+    files = sorted(f for f in os.listdir(SCRIPTS_DIR) if f.endswith(".sh"))
+    return {"scripts": "\n".join(files)}
+
 def cmd_restart(_args: dict) -> dict:
     if not ALLOW_POWER:
         return {"bloqueado": "reinicio desactivado (pon ALLOW_POWER=1 para permitirlo)"}
@@ -334,6 +341,7 @@ COMMAND_MAP = {
     "open":          _not_supported,
     "kill_process":  cmd_kill_process,
     "run_script":    cmd_run_script,
+    "list_scripts":  cmd_list_scripts,
     # extra Linux
     "services":       cmd_services,
     "docker":         cmd_docker,

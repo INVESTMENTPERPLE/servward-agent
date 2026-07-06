@@ -408,6 +408,14 @@ def cmd_run_script(args: dict) -> dict:
     except subprocess.CalledProcessError as e:
         return {"error": f"Error (código {e.returncode})", "output": (e.output or "")[:500]}
 
+def cmd_list_scripts(_args: dict) -> dict:
+    """Lista los scripts .sh de ~/ntfy_scripts (para el selector de la app)."""
+    script_dir = os.path.expanduser("~/ntfy_scripts")
+    if not os.path.isdir(script_dir):
+        return {"scripts": "", "info": "La carpeta ~/ntfy_scripts no existe todavía"}
+    files = sorted(f for f in os.listdir(script_dir) if f.endswith(".sh"))
+    return {"scripts": "\n".join(files)}
+
 # ── Umbrales ajustables en caliente ──────────────────────────────────────────
 def cmd_set_thresholds(args: dict) -> dict:
     """Actualiza los umbrales de alerta sin reiniciar el agente."""
@@ -732,6 +740,7 @@ COMMAND_MAP = {
     "tailscale_down":   cmd_tailscale_down,
     # Scripts
     "run_script":    cmd_run_script,
+    "list_scripts":  cmd_list_scripts,
     # Servicios y Docker
     "services":       cmd_services,
     "docker":         cmd_docker,
