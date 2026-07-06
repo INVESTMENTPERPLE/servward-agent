@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Informativa sulla privacy — Servward</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #000000; --text: #f5f5f7; --muted: #86868b;
+      --body-text: #d1d1d6; --border: rgba(255,255,255,0.08); --blue: #2997ff;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: var(--bg); color: var(--text);
+      -webkit-font-smoothing: antialiased; line-height: 1.7;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 48px 24px 120px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding-bottom: 56px; }
+    .nav-logo { font-size: 17px; font-weight: 600; color: var(--text); text-decoration: none; }
+    .nav-back { font-size: 15px; color: var(--blue); }
+
+    h1 { font-size: clamp(32px, 6vw, 48px); font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .updated { font-size: 14px; color: var(--muted); margin-bottom: 56px; }
+
+    h2 { font-size: 19px; font-weight: 600; margin: 44px 0 12px; }
+    p  { font-size: 17px; color: var(--body-text); margin-bottom: 14px; }
+    ul { font-size: 17px; color: var(--body-text); padding-left: 20px; margin-bottom: 14px; }
+    ul li { margin-bottom: 10px; }
+    strong { color: var(--text); font-weight: 600; }
+
+    hr { border: none; border-top: 1px solid var(--border); margin: 56px 0 32px; }
+    footer { font-size: 14px; color: var(--muted); display: flex; gap: 24px; flex-wrap: wrap; }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav>
+    <a href="/" class="nav-logo">Servward</a>
+    <a href="/" class="nav-back">← Indietro</a>
+  </nav>
+
+  <h1>Informativa sulla privacy</h1>
+  <p class="updated">Ultimo aggiornamento: 5 luglio 2026</p>
+
+  <p>Servward è uno strumento di controllo remoto che ti permette di monitorare e gestire il tuo Mac dal tuo iPhone. Questa informativa spiega quali dati gestisce l'app e come.</p>
+
+  <h2>1. Dati che non raccogliamo</h2>
+  <p>Non raccogliamo, conserviamo né condividiamo alcuna informazione personale sui nostri server. L'app non ha alcuna infrastruttura backend gestita da EspymeLab. Non include SDK di analisi, di pubblicità né servizi di segnalazione dei crash.</p>
+
+  <h2>2. Dati archiviati sui tuoi dispositivi</h2>
+  <ul>
+    <li><strong>URL del server e token bearer</strong> — archiviati nel Portachiavi (Keychain) di iOS e sincronizzati tramite l'archivio chiave-valore di iCloud tra i tuoi dispositivi. Mai trasmessi a terzi.</li>
+    <li><strong>Comandi personalizzati</strong> — archiviati nell'archivio chiave-valore di iCloud. Accessibili solo a te tramite il tuo account iCloud.</li>
+    <li><strong>Token dispositivo APNs</strong> — inviato una volta al server Mac che configuri e controlli, così da poterti recapitare le notifiche push sull'iPhone. Non condiviso con terzi.</li>
+  </ul>
+
+  <h2>3. iCloud</h2>
+  <p>L'app usa l'archivio chiave-valore di iCloud di Apple per sincronizzare le impostazioni del server e i comandi personalizzati tra i tuoi dispositivi. Questi dati sono regolati dall'<a href="https://www.apple.com/legal/privacy/" target="_blank">Informativa sulla privacy di Apple</a>. EspymeLab non ha accesso ai tuoi dati iCloud.</p>
+
+  <h2>4. Comunicazione di rete</h2>
+  <p>Tutta la comunicazione avviene tra il tuo iPhone e l'URL del server che configuri — una macchina che possiedi e gestisci. Nessun dato passa per i server di EspymeLab perché non ne gestiamo alcuno.</p>
+
+  <h2>5. Notifiche push</h2>
+  <p>Le notifiche push vengono recapitate tramite il servizio Apple Push Notification (APNs). Hanno origine dal tuo agente Mac e vengono instradate tramite APNs al tuo dispositivo. EspymeLab non ha accesso al contenuto delle notifiche.</p>
+
+  <h2>6. Servizi di terze parti</h2>
+  <p>Se esponi il tuo Mac tramite Cloudflare Tunnel, il tuo traffico passa per la rete di Cloudflare. Consulta l'<a href="https://www.cloudflare.com/privacypolicy/" target="_blank">informativa privacy di Cloudflare</a>. Se usi Tailscale, consulta l'<a href="https://tailscale.com/privacy-policy" target="_blank">informativa privacy di Tailscale</a>.</p>
+
+  <h2>7. Privacy dei minori</h2>
+  <p>Servward è uno strumento tecnico pensato per adulti che gestiscono i propri computer. Non è rivolto ai minori e non raccogliamo consapevolmente dati dai minori.</p>
+
+  <h2>8. Modifiche a questa informativa</h2>
+  <p>Se aggiorniamo questa informativa, la data di «Ultimo aggiornamento» verrà rivista. L'uso continuato dell'app dopo le modifiche ne costituisce l'accettazione.</p>
+
+  <h2>9. Contatto</h2>
+  <p>Domande? Scrivi a <a href="mailto:investmentperplexity@gmail.com">investmentperplexity@gmail.com</a></p>
+
+  <hr/>
+  <footer>
+    <span>© 2026 EspymeLab</span>
+    <span>🌐 <a href="privacy.html">EN</a> · <a href="privacy.es.html">ES</a> · <strong style="color:#f5f5f7">IT</strong></span>
+    <a href="eula.it.html">Termini</a>
+    <a href="https://github.com/INVESTMENTPERPLE/servward-agent">GitHub</a>
+  </footer>
+
+</div>
+</body>
+</html>

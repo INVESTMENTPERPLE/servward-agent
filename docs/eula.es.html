@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Términos de uso — Servward</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #000000; --text: #f5f5f7; --muted: #86868b;
+      --body-text: #d1d1d6; --border: rgba(255,255,255,0.08); --blue: #2997ff;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: var(--bg); color: var(--text);
+      -webkit-font-smoothing: antialiased; line-height: 1.7;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 48px 24px 120px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav { display: flex; align-items: center; justify-content: space-between; padding-bottom: 56px; }
+    .nav-logo { font-size: 17px; font-weight: 600; color: var(--text); text-decoration: none; }
+    .nav-back { font-size: 15px; color: var(--blue); }
+
+    h1 { font-size: clamp(32px, 6vw, 48px); font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .updated { font-size: 14px; color: var(--muted); margin-bottom: 56px; }
+
+    h2 { font-size: 19px; font-weight: 600; margin: 44px 0 12px; }
+    p  { font-size: 17px; color: var(--body-text); margin-bottom: 14px; }
+    ul { font-size: 17px; color: var(--body-text); padding-left: 20px; margin-bottom: 14px; }
+    ul li { margin-bottom: 10px; }
+    strong { color: var(--text); font-weight: 600; }
+
+    hr { border: none; border-top: 1px solid var(--border); margin: 56px 0 32px; }
+    footer { font-size: 14px; color: var(--muted); display: flex; gap: 24px; flex-wrap: wrap; }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav>
+    <a href="/" class="nav-logo">Servward</a>
+    <a href="/" class="nav-back">← Volver</a>
+  </nav>
+
+  <h1>Términos de uso</h1>
+  <p class="updated">Última actualización: 5 de julio de 2026</p>
+
+  <p>Estos Términos de uso («Términos») regulan tu uso de la app Servward para iOS (la «App»), publicada por EspymeLab («nosotros»). Al descargar o usar la App, aceptas estos Términos. Si no estás de acuerdo, no uses la App.</p>
+
+  <h2>1. Qué es Servward</h2>
+  <p>Servward es una herramienta de control remoto que te permite monitorizar y gestionar tus propios ordenadores desde tu iPhone. Funciona junto con el agente Servward de código abierto, que instalas y ejecutas en tu propia máquina.</p>
+
+  <h2>2. Licencia de uso de la App</h2>
+  <p>Te concedemos una licencia personal, no exclusiva, intransferible y revocable para usar la App en dispositivos que poseas o controles, con fines lícitos propios, conforme a estos Términos y a los Términos de servicio de la App Store de Apple.</p>
+
+  <h2>3. El agente de código abierto</h2>
+  <p>El agente y el broker de Servward son software de código abierto independiente, distribuido bajo la Licencia MIT desde nuestro <a href="https://github.com/INVESTMENTPERPLE/servward-agent" target="_blank">repositorio de GitHub</a>. Tu uso de ese software se rige por la Licencia MIT, no por estos Términos. Eres libre de inspeccionarlo, modificarlo y autohospedarlo.</p>
+
+  <h2>4. Ejecución de comandos — tu responsabilidad</h2>
+  <p>La App te permite enviar comandos y ejecutar scripts en las máquinas que configures. <strong>Eres el único responsable de los comandos y scripts que decidas ejecutar y de sus consecuencias</strong>, incluida cualquier pérdida de datos, caída del servicio o daño. La App ejecuta lo que le indicas; no valida la seguridad de tus comandos. Ejecuta solo comandos que entiendas.</p>
+
+  <h2>5. La seguridad es autohospedada y compartida</h2>
+  <p>Servward funciona sobre tu propia infraestructura. Eres responsable de asegurar tu despliegue: mantener tu token de acceso en secreto, usar una conexión cifrada (como Cloudflare Tunnel, Tailscale o TLS) y mantener tus sistemas actualizados. Cualquiera que obtenga tu token puede controlar la máquina conectada. Consulta nuestro <a href="https://github.com/INVESTMENTPERPLE/servward-agent/blob/main/SECURITY-MODEL.md" target="_blank">Modelo de seguridad</a> para el desglose completo de qué aseguramos nosotros y qué aseguras tú.</p>
+
+  <h2>6. Uso aceptable</h2>
+  <p>Aceptas usar la App solo en máquinas que poseas o estés autorizado a gestionar, y solo con fines lícitos. No puedes usar la App para acceder a sistemas sin autorización ni para vulnerar ninguna ley aplicable.</p>
+
+  <h2>7. Exención de garantías</h2>
+  <p>La App se proporciona <strong>«tal cual» y «según disponibilidad», sin garantías de ningún tipo</strong>, expresas o implícitas, incluidas la idoneidad para un fin concreto y la no infracción. No garantizamos que la App vaya a funcionar sin interrupciones, sin errores o segura frente a toda amenaza.</p>
+
+  <h2>8. Limitación de responsabilidad</h2>
+  <p>En la máxima medida permitida por la ley aplicable, EspymeLab no será responsable de daños indirectos, incidentales o consecuentes, ni de pérdida de datos, interrupción del negocio o daños a tus sistemas, derivados del uso de la App o del agente.</p>
+
+  <h2>9. Tus derechos como consumidor</h2>
+  <p>Nada en estos Términos excluye ni limita los derechos legales imperativos que te correspondan como consumidor según la ley de tu país de residencia, incluidos tus derechos bajo la normativa de protección del consumidor de la UE. Cuando alguna disposición de estos Términos entre en conflicto con esos derechos imperativos, prevalecerán dichos derechos.</p>
+
+  <h2>10. Servicios de terceros</h2>
+  <p>La App se apoya en la App Store de Apple y en el servicio de notificaciones push de Apple, y puede conectarse a través de Cloudflare o Tailscale si decides usarlos. Tu uso de esos servicios se rige por sus propios términos y políticas de privacidad.</p>
+
+  <h2>11. Cambios en estos Términos</h2>
+  <p>Podemos actualizar estos Términos. Cuando lo hagamos, cambiará la fecha de «Última actualización». El uso continuado de la App tras una actualización constituye la aceptación de los Términos revisados.</p>
+
+  <h2>12. Ley aplicable</h2>
+  <p>Estos Términos se rigen por las leyes de España, sin perjuicio de los derechos imperativos de protección del consumidor de tu país de residencia.</p>
+
+  <h2>13. Contacto</h2>
+  <p>¿Preguntas? Escribe a <a href="mailto:investmentperplexity@gmail.com">investmentperplexity@gmail.com</a></p>
+
+  <hr/>
+  <footer>
+    <span>© 2026 EspymeLab</span>
+    <span>🌐 <a href="eula.html">EN</a> · <strong style="color:#f5f5f7">ES</strong> · <a href="eula.it.html">IT</a></span>
+    <a href="privacy.es.html">Privacidad</a>
+    <a href="https://github.com/INVESTMENTPERPLE/servward-agent">GitHub</a>
+  </footer>
+
+</div>
+</body>
+</html>
