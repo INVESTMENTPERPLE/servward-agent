@@ -443,19 +443,150 @@ def cmd_set_thresholds(args: dict) -> dict:
         return {"error": "No se especificó ningún umbral"}
     log.info("Umbrales actualizados: %s", changed)
     return {
-        "ok": True,
-        "umbrales": {
-            "cpu_pct":   ALERT_CPU_PCT,
-            "ram_pct":   ALERT_RAM_PCT,
-            "disk_pct":  ALERT_DISK_PCT,
-            "temp_c":    ALERT_TEMP_C,
-            "intervalo": MONITOR_INTERVAL_S,
-        }
+        "ok":        "true",
+        "cpu_pct":   str(ALERT_CPU_PCT),
+        "ram_pct":   str(ALERT_RAM_PCT),
+        "disk_pct":  str(ALERT_DISK_PCT),
+        "temp_c":    str(ALERT_TEMP_C),
+        "intervalo": str(MONITOR_INTERVAL_S),
     }
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  APNs PUSH NOTIFICATIONS
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── Alertas personalizadas (reglas definidas por el usuario en la app) ────────
+CUSTOM_ALERTS_FILE = os.environ.get("ALERTS_FILE",
+                                    os.path.expanduser("~/.ntfy_custom_alerts.json"))
+_custom_alerts: list = []
+_alerts_lock = threading.Lock()
+_script_last: dict[str, float] = {}
+
+def _load_custom_alerts():
+    global _custom_alerts
+    try:
+        if os.path.isfile(CUSTOM_ALERTS_FILE):
+            with open(CUSTOM_ALERTS_FILE) as fh:
+                data = json.load(fh)
+            if isinstance(data, list):
+                _custom_alerts = [r for r in data if isinstance(r, dict) and r.get("id")]
+                log.info("CUSTOM_ALERTS cargadas: %d reglas", len(_custom_alerts))
+    except Exception as e:
+        log.warning("ALERTS_LOAD_ERROR %s", e)
+
+def cmd_set_custom_alerts(args: dict) -> dict:
+    """Recibe TODAS las reglas (JSON en args['rules']) y las aplica en caliente."""
+    global _custom_alerts
+    try:
+        rules = json.loads(args.get("rules", "[]"))
+        assert isinstance(rules, list)
+    except Exception:
+        return {"error": "JSON de reglas inválido"}
+    rules = [r for r in rules if isinstance(r, dict) and r.get("id")]
+    with _alerts_lock:
+        _custom_alerts = rules
+        try:
+            with open(CUSTOM_ALERTS_FILE, "w") as fh:
+                json.dump(rules, fh, ensure_ascii=False)
+        except Exception as e:
+            log.warning("ALERTS_SAVE_ERROR %s", e)
+    log.info("CUSTOM_ALERTS actualizadas: %d reglas", len(rules))
+    return {"ok": "true", "count": str(len(rules))}
+
+def cmd_get_custom_alerts(_args: dict) -> dict:
+    with _alerts_lock:
+        return {"rules": json.dumps(_custom_alerts, ensure_ascii=False),
+                "count": str(len(_custom_alerts))}
+
+def _quiet_now(rule: dict) -> bool:
+    """True si estamos dentro del horario silencioso de la regla."""
+    try:
+        qf = int(float(rule.get("quiet_from", -1)))
+        qt = int(float(rule.get("quiet_to", -1)))
+    except (TypeError, ValueError):
+        return False
+    if qf < 0 or qt < 0 or qf == qt:
+        return False
+    h = time.localtime().tm_hour
+    return (qf <= h < qt) if qf < qt else (h >= qf or h < qt)
+
+def _rule_fires(rule: dict, metrics: dict) -> bool:
+    kind   = str(rule.get("kind", ""))
+    target = str(rule.get("target", "")).strip()
+    if kind == "metric":
+        cur = metrics.get(target)
+        if cur is None:
+            return False
+        try:
+            val = float(rule.get("value", 0))
+        except (TypeError, ValueError):
+            return False
+        return cur > val if str(rule.get("op", ">")) == ">" else cur < val
+    if kind == "service":
+        # macOS: LaunchAgent con estado != running
+        if not target or not re.match(r'^[\w\-\.]+$', target):
+            return False
+        try:
+            r = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{target}"],
+                               capture_output=True, text=True, timeout=5)
+            if r.returncode != 0:
+                return True
+            m = re.search(r"state = (.+)", r.stdout)
+            return not (m and "running" in m.group(1))
+        except Exception:
+            return False
+    if kind == "docker":
+        if not target or not shutil.which("docker"):
+            return False
+        try:
+            r = subprocess.run(["docker", "inspect", "-f", "{{.State.Running}}", target],
+                               capture_output=True, text=True, timeout=8)
+            return r.returncode != 0 or r.stdout.strip() != "true"
+        except Exception:
+            return False
+    if kind == "script":
+        # scripts como mucho cada 10 min (son los más caros de evaluar)
+        if not target or not re.match(r'^[\w\-]+\.sh$', target):
+            return False
+        rid = str(rule.get("id"))
+        now = time.monotonic()
+        if now - _script_last.get(rid, 0) < 600:
+            return False
+        _script_last[rid] = now
+        path = os.path.join(os.path.expanduser("~/ntfy_scripts"), target)
+        if not os.path.isfile(path):
+            return False
+        try:
+            r = subprocess.run(["bash", path], capture_output=True, text=True, timeout=30)
+            blob = (r.stdout or "") + (r.stderr or "")
+            needle = str(rule.get("text", "")).strip()
+            return bool(needle) and needle.lower() in blob.lower()
+        except Exception:
+            return False
+    return False
+
+def _eval_custom_alerts(metrics: dict):
+    with _alerts_lock:
+        rules = list(_custom_alerts)
+    for rule in rules:
+        try:
+            if str(rule.get("enabled", "1")).lower() in ("0", "false"):
+                continue
+            if _quiet_now(rule):
+                continue
+            if not _rule_fires(rule, metrics):
+                continue
+            try:
+                cd = 60 * max(1, int(float(rule.get("cooldown_min", 30) or 30)))
+            except (TypeError, ValueError):
+                cd = 1800
+            if not _can_alert(f"cust_{rule.get('id')}", cd):
+                continue
+            name = str(rule.get("name") or "Alerta")
+            msg  = str(rule.get("message") or f"Regla «{name}» disparada en {platform.node()}")
+            send_push(name, msg)
+        except Exception as e:
+            log.error("CUSTOM_ALERT_ERROR  %s", e)
 
 def _get_device_tokens() -> list:
     """Lee los device tokens guardados en el servidor (localhost)."""
@@ -514,9 +645,9 @@ def send_push(title: str, body: str, data: dict = None) -> bool:
 
 _last_alert: dict[str, float] = {}   # tipo_alerta → timestamp último envío
 
-def _can_alert(key: str) -> bool:
+def _can_alert(key: str, cooldown: float = ALERT_COOLDOWN_S) -> bool:
     now = time.monotonic()
-    if now - _last_alert.get(key, 0) > ALERT_COOLDOWN_S:
+    if now - _last_alert.get(key, 0) > cooldown:
         _last_alert[key] = now
         return True
     return False
@@ -573,6 +704,14 @@ def monitoring_thread():
                     "🌡️ Temperatura Alta",
                     f"CPU a {temp:.1f}°C en {platform.node()}"
                 )
+
+            # Reglas personalizadas del usuario
+            _eval_custom_alerts({
+                "cpu":  cpu,
+                "ram":  mem.percent,
+                "disk": disk.percent,
+                "temp": temp,
+            })
 
         except Exception as e:
             log.error("MONITOR_ERROR  %s", e)
@@ -749,12 +888,14 @@ COMMAND_MAP = {
     "docker_action":  cmd_docker_action,
     # Alertas
     "set_thresholds": cmd_set_thresholds,
+    "set_custom_alerts": cmd_set_custom_alerts,
+    "get_custom_alerts": cmd_get_custom_alerts,
     "get_thresholds": lambda _: {
-        "cpu_pct":   ALERT_CPU_PCT,
-        "ram_pct":   ALERT_RAM_PCT,
-        "disk_pct":  ALERT_DISK_PCT,
-        "temp_c":    ALERT_TEMP_C,
-        "intervalo": MONITOR_INTERVAL_S,
+        "cpu_pct":   str(ALERT_CPU_PCT),
+        "ram_pct":   str(ALERT_RAM_PCT),
+        "disk_pct":  str(ALERT_DISK_PCT),
+        "temp_c":    str(ALERT_TEMP_C),
+        "intervalo": str(MONITOR_INTERVAL_S),
     },
 }
 
@@ -851,6 +992,8 @@ if __name__ == "__main__":
     log.info("Servward Agent arrancando — %d comandos disponibles", len(COMMAND_MAP))
     log.info("Servidor: %s", NTFY_BASE)
     log.info("APNs cert: %s", APNS_CERT if os.path.isfile(APNS_CERT) else "NO ENCONTRADO")
+
+    _load_custom_alerts()
 
     # Arrancar monitor en hilo background (daemon: muere con el proceso principal)
     t = threading.Thread(target=monitoring_thread, daemon=True, name="monitor")
