@@ -648,6 +648,56 @@ def cmd_docker_action(args: dict) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+# ── Apps abiertas (GUI) ───────────────────────────────────────────────────────
+def cmd_list_apps(_args: dict) -> dict:
+    """Apps con interfaz (Dock/ventanas) abiertas ahora mismo."""
+    try:
+        r = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of every process whose background only is false'],
+            capture_output=True, text=True, timeout=10)
+        names = sorted(n.strip() for n in r.stdout.split(",") if n.strip())
+        front = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of first process whose frontmost is true'],
+            capture_output=True, text=True, timeout=10).stdout.strip()
+        return {"apps": names, "count": len(names), "frontmost": front}
+    except Exception as e:
+        return {"error": str(e)}
+
+def cmd_activate_app(args: dict) -> dict:
+    """Trae una app al primer plano."""
+    name = (args.get("name") or "").strip()
+    if not name:
+        return {"error": "falta 'name'"}
+    safe = name.replace('"', '\\"')
+    try:
+        r = subprocess.run(
+            ["osascript", "-e",
+             f'tell application "System Events" to set frontmost of process "{safe}" to true'],
+            capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return {"error": r.stderr.strip() or "no se pudo activar"}
+        return {"app": name, "accion": "activate", "resultado": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def cmd_quit_app(args: dict) -> dict:
+    """Cierra una app de forma ordenada (equivalente a Cmd-Q)."""
+    name = (args.get("name") or "").strip()
+    if not name:
+        return {"error": "falta 'name'"}
+    safe = name.replace('"', '\\"')
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", f'tell application "{safe}" to quit'],
+            capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return {"error": r.stderr.strip() or "no se pudo cerrar"}
+        return {"app": name, "accion": "quit", "resultado": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+
 # ── Mapa de comandos ──────────────────────────────────────────────────────────
 COMMAND_MAP = {
     # Monitor
@@ -671,6 +721,10 @@ COMMAND_MAP = {
     # Tareas
     "kill_process":  cmd_kill_process,
     "open":          cmd_open,
+    # Apps (GUI)
+    "list_apps":     cmd_list_apps,
+    "activate_app":  cmd_activate_app,
+    "quit_app":      cmd_quit_app,
     # Tailscale
     "tailscale_status": cmd_tailscale_status,
     "tailscale_up":     cmd_tailscale_up,

@@ -29,3 +29,7 @@ start_agent.sh
 start_server.sh
 ntfy_launch.command
 restart_agent.command
+
+# Infra personal del mantenedor — NO forma parte del producto open-source
+setup_mac_cloudflared_daemons.command
+.svc_check.sh
