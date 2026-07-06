@@ -670,7 +670,7 @@ def cmd_list_apps(_args: dict) -> dict:
             ["osascript", "-e",
              'tell application "System Events" to get name of first process whose frontmost is true'],
             capture_output=True, text=True, timeout=10).stdout.strip()
-        return {"apps": names, "count": len(names), "frontmost": front}
+        return {"apps": "\n".join(names), "count": str(len(names)), "frontmost": front}
     except Exception as e:
         return {"error": str(e)}
 
