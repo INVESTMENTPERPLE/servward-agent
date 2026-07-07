@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: Shell lint (shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Asegurar shellcheck
+        run: |
+          command -v shellcheck >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y shellcheck; }
+          shellcheck --version
+      - name: Lint de scripts bash/sh (solo ficheros versionados)
+        run: |
+          # Los .command NO llevan extensión .sh pero SON bash (shebang + --shell=bash).
+          # -x sigue los "source"; -S warning falla en errores/warnings reales.
+          files=$(git ls-files '*.sh' '*.command' 'deploy/ntfyctl' | sort -u)
+          echo "Analizando:"; echo "$files"
+          # shellcheck no debe recibir lista vacía
+          [ -n "$files" ] && shellcheck -x -S warning --shell=bash $files
+
+  python:
+    name: Python lint (ruff + py_compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar ruff
+        run: pip install ruff
+      - name: ruff check
+        run: ruff check server.py agent.py agent_linux.py
+      - name: Sintaxis (py_compile)
+        run: python -m py_compile server.py agent.py agent_linux.py
