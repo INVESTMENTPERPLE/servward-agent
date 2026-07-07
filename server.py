@@ -124,13 +124,19 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── IP real del cliente (detrás de Cloudflare/proxy) ──────────────────────
     def _client_ip(self) -> str:
-        cf = self.headers.get("CF-Connecting-IP")
-        if cf:
-            return cf.strip()
-        xff = self.headers.get("X-Forwarded-For")
-        if xff:
-            return xff.split(",")[0].strip()
-        return self.client_address[0]
+        peer = self.client_address[0]
+        # Solo confiamos en las cabeceras de proxy si la conexión llega del túnel
+        # local (Cloudflare -> 127.0.0.1). Desde Tailscale/LAN el peer es la IP
+        # real del cliente: NO honramos las cabeceras, para que no se puedan
+        # falsear y evadir el rate-limit ni el bypass "local".
+        if peer in ("127.0.0.1", "::1"):
+            cf = self.headers.get("CF-Connecting-IP")
+            if cf:
+                return cf.strip()
+            xff = self.headers.get("X-Forwarded-For")
+            if xff:
+                return xff.split(",")[0].strip()
+        return peer
 
     # ── Autenticación ─────────────────────────────────────────────────────────
     def _auth(self) -> bool:

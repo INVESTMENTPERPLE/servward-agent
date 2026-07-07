@@ -29,6 +29,7 @@ import threading
 import time
 import urllib.request
 import urllib.error
+from collections import deque
 
 try:
     import psutil
@@ -406,6 +407,98 @@ def _get_temp():
     except Exception:
         return None
 
+# ── Histórico de métricas (para la gráfica de la app) ─────────────────────────
+METRICS_FILE = os.environ.get("METRICS_FILE", os.path.join(_SCRIPT_DIR, "metrics_history.json"))
+METRICS_MAX  = 240                                   # ~4 h a 60 s por muestra
+_metrics_hist = deque(maxlen=METRICS_MAX)            # [ts, cpu, ram, disk]
+_metrics_lock = threading.Lock()
+
+def _load_metrics():
+    try:
+        if os.path.isfile(METRICS_FILE):
+            with open(METRICS_FILE) as fh:
+                data = json.load(fh)
+            if isinstance(data, list):
+                with _metrics_lock:
+                    for x in data[-METRICS_MAX:]:
+                        if isinstance(x, list) and len(x) == 4:
+                            _metrics_hist.append([int(x[0]), int(x[1]), int(x[2]), int(x[3])])
+    except Exception as e:
+        log(f"METRICS_LOAD_ERROR {e}")
+
+def _save_metrics():
+    try:
+        with _metrics_lock:
+            snapshot = list(_metrics_hist)
+        with open(METRICS_FILE, "w") as fh:
+            json.dump(snapshot, fh)
+    except Exception as e:
+        log(f"METRICS_SAVE_ERROR {e}")
+
+def _record_metrics(cpu, ram, disk):
+    with _metrics_lock:
+        _metrics_hist.append([int(time.time()), int(round(cpu)),
+                              int(round(ram)), int(round(disk))])
+    _save_metrics()
+
+def cmd_metrics_history(_args: dict) -> dict:
+    with _metrics_lock:
+        rows = list(_metrics_hist)
+    if not rows:
+        return {"count": "0", "step_s": str(MONITOR_INTERVAL_S)}
+    return {
+        "count":  str(len(rows)),
+        "step_s": str(MONITOR_INTERVAL_S),
+        "ts":     ",".join(str(r[0]) for r in rows),
+        "cpu":    ",".join(str(r[1]) for r in rows),
+        "ram":    ",".join(str(r[2]) for r in rows),
+        "disk":   ",".join(str(r[3]) for r in rows),
+    }
+
+# ── Actualizaciones del sistema (APT) ─────────────────────────────────────────
+def cmd_updates(_args: dict) -> dict:
+    if not shutil.which("apt"):
+        return {"count": "0", "manager": "desconocido",
+                "info": "gestor de paquetes no soportado (solo apt)"}
+    try:
+        out = subprocess.run(["apt", "list", "--upgradable"],
+                             capture_output=True, text=True, timeout=30,
+                             env=dict(os.environ, LANG="C")).stdout
+    except Exception as e:
+        return {"error": str(e)}
+    pkgs, sec = [], 0
+    for line in out.splitlines():
+        line = line.strip()
+        if "/" in line and "[upgradable" in line:
+            name = line.split("/", 1)[0]
+            pkgs.append(name)
+            if "-security" in line.split(" ", 1)[0]:
+                sec += 1
+    return {
+        "count":    str(len(pkgs)),
+        "security": str(sec),
+        "list":     "\n".join(pkgs),
+        "manager":  "APT",
+    }
+
+def cmd_apply_updates(_args: dict) -> dict:
+    if not shutil.which("apt-get"):
+        return {"error": "apt-get no disponible"}
+    try:
+        r = subprocess.run(["sudo", "-n", "apt-get", "-y", "upgrade"],
+                           capture_output=True, text=True, timeout=600,
+                           env=dict(os.environ, DEBIAN_FRONTEND="noninteractive"))
+        out = ((r.stdout or "") + (r.stderr or "")).strip()
+        low = out.lower()
+        if "password is required" in low or "a terminal is required" in low or "not allowed" in low:
+            return {"error": "el agente no tiene permiso sudo para apt (configura sudoers para apt-get)"}
+        return {"resultado": "ok" if r.returncode == 0 else f"código {r.returncode}",
+                "output": out[-1200:] or "(sin salida)"}
+    except subprocess.TimeoutExpired:
+        return {"error": "La actualización sigue en curso (>10 min). Vuelve a comprobar en un rato."}
+    except Exception as e:
+        return {"error": str(e)}
+
 # ── Umbrales ajustables en caliente (paridad con el agente Mac) ──────────────
 def cmd_set_thresholds(args: dict) -> dict:
     global ALERT_CPU_PCT, ALERT_RAM_PCT, ALERT_DISK_PCT, ALERT_TEMP_C, MONITOR_INTERVAL_S
@@ -564,6 +657,8 @@ def monitoring_thread():
             if disk.percent >= ALERT_DISK_PCT and _can_alert("disk"):
                 send_push("⚠️ Disco lleno",
                           f"Disco al {disk.percent:.0f}% ({disk.used/1e9:.1f}/{disk.total/1e9:.1f} GB)")
+            _record_metrics(cpu, mem.percent, disk.percent)
+
             temp = _get_temp()
             if temp and temp >= ALERT_TEMP_C and _can_alert("temp"):
                 send_push("🌡️ Temperatura Alta", f"{temp:.1f}°C en {platform.node()}")
@@ -606,6 +701,10 @@ COMMAND_MAP = {
     "get_thresholds":    cmd_get_thresholds,
     "set_custom_alerts": cmd_set_custom_alerts,
     "get_custom_alerts": cmd_get_custom_alerts,
+    # Histórico y actualizaciones
+    "metrics_history": cmd_metrics_history,
+    "updates":         cmd_updates,
+    "apply_updates":   cmd_apply_updates,
 }
 
 # ── Publicar respuesta ──────────────────────────────────────────────────────
@@ -683,5 +782,6 @@ if __name__ == "__main__":
     log(f"Servward Agente Linux — {len(COMMAND_MAP)} comandos")
     log(f"Broker: {NTFY_BASE}  topics: {CMD_TOPIC} / {RESP_TOPIC}")
     _load_custom_alerts()
+    _load_metrics()
     threading.Thread(target=monitoring_thread, daemon=True, name="monitor").start()
     listen_loop()

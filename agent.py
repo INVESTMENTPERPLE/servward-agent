@@ -25,6 +25,7 @@ import threading
 import time
 import urllib.request
 import urllib.error
+from collections import deque
 from datetime import datetime
 from typing import Optional
 
@@ -665,6 +666,101 @@ def _get_cpu_temp() -> Optional[float]:
             pass
     return None
 
+# ── Histórico de métricas (para la gráfica de la app) ─────────────────────────
+METRICS_FILE = os.environ.get("METRICS_FILE", os.path.expanduser("~/.ntfy_metrics.json"))
+METRICS_MAX  = 240                                   # ~4 h a 60 s por muestra
+_metrics_hist: deque = deque(maxlen=METRICS_MAX)     # [ts, cpu, ram, disk]
+_metrics_lock = threading.Lock()
+
+def _load_metrics():
+    try:
+        if os.path.isfile(METRICS_FILE):
+            with open(METRICS_FILE) as fh:
+                data = json.load(fh)
+            if isinstance(data, list):
+                with _metrics_lock:
+                    for x in data[-METRICS_MAX:]:
+                        if isinstance(x, list) and len(x) == 4:
+                            _metrics_hist.append([int(x[0]), int(x[1]), int(x[2]), int(x[3])])
+    except Exception as e:
+        log.warning("METRICS_LOAD_ERROR %s", e)
+
+def _save_metrics():
+    try:
+        with _metrics_lock:
+            snapshot = list(_metrics_hist)
+        with open(METRICS_FILE, "w") as fh:
+            json.dump(snapshot, fh)
+    except Exception as e:
+        log.debug("METRICS_SAVE_ERROR %s", e)
+
+def _record_metrics(cpu, ram, disk):
+    with _metrics_lock:
+        _metrics_hist.append([int(time.time()), int(round(cpu)),
+                              int(round(ram)), int(round(disk))])
+    _save_metrics()
+
+def cmd_metrics_history(_args: dict) -> dict:
+    with _metrics_lock:
+        rows = list(_metrics_hist)
+    if not rows:
+        return {"count": "0", "step_s": str(MONITOR_INTERVAL_S)}
+    return {
+        "count":  str(len(rows)),
+        "step_s": str(MONITOR_INTERVAL_S),
+        "ts":     ",".join(str(r[0]) for r in rows),
+        "cpu":    ",".join(str(r[1]) for r in rows),
+        "ram":    ",".join(str(r[2]) for r in rows),
+        "disk":   ",".join(str(r[3]) for r in rows),
+    }
+
+# ── Actualizaciones del sistema (Homebrew + macOS) ────────────────────────────
+def cmd_updates(_args: dict) -> dict:
+    brew_list, brew_n = [], 0
+    if shutil.which("brew"):
+        try:
+            out = subprocess.run(["brew", "outdated", "--quiet"],
+                                 capture_output=True, text=True, timeout=30).stdout.strip()
+            brew_list = [l.strip() for l in out.splitlines() if l.strip()]
+            brew_n = len(brew_list)
+        except Exception:
+            pass
+    os_list = []
+    try:
+        r = subprocess.run(["softwareupdate", "-l"],
+                           capture_output=True, text=True, timeout=45)
+        for line in (r.stdout + r.stderr).splitlines():
+            line = line.strip()
+            if line.startswith("* Label:"):
+                os_list.append(line.split("Label:", 1)[1].strip())
+    except Exception:
+        pass
+    names = brew_list + [f"macOS: {x}" for x in os_list]
+    mgr = (["Homebrew"] if shutil.which("brew") else []) + ["macOS"]
+    return {
+        "count":   str(brew_n + len(os_list)),
+        "brew":    str(brew_n),
+        "system":  str(len(os_list)),
+        "list":    "\n".join(names),
+        "manager": " + ".join(mgr),
+    }
+
+def cmd_apply_updates(_args: dict) -> dict:
+    """Actualiza los paquetes de Homebrew (espacio de usuario, sin sudo)."""
+    if not shutil.which("brew"):
+        return {"error": "Homebrew no está instalado. Las actualizaciones de macOS "
+                         "se instalan desde Ajustes del sistema › General › Software."}
+    try:
+        r = subprocess.run(["brew", "upgrade"], capture_output=True, text=True, timeout=600)
+        out = ((r.stdout or "") + (r.stderr or "")).strip()
+        return {"resultado": "ok" if r.returncode == 0 else f"código {r.returncode}",
+                "output": out[-1200:] or "(sin salida)",
+                "nota": "Las actualizaciones de macOS se instalan desde Ajustes del sistema."}
+    except subprocess.TimeoutExpired:
+        return {"error": "La actualización sigue en curso (>10 min). Vuelve a comprobar en un rato."}
+    except Exception as e:
+        return {"error": str(e)}
+
 def monitoring_thread():
     """Loop de monitoreo en background. Envía push si se superan umbrales."""
     log.info("Monitor iniciado — intervalo=%ds  CPU>%.0f%%  RAM>%.0f%%  disco>%.0f%%  temp>%.0f°C",
@@ -696,6 +792,9 @@ def monitoring_thread():
                     f"Disco al {disk.percent:.0f}% "
                     f"({disk.used/1e9:.1f}/{disk.total/1e9:.1f} GB)"
                 )
+
+            # Registrar muestra para el histórico de la app
+            _record_metrics(cpu, mem.percent, disk.percent)
 
             # Temperatura CPU
             temp = _get_cpu_temp()
@@ -881,6 +980,10 @@ COMMAND_MAP = {
     # Scripts
     "run_script":    cmd_run_script,
     "list_scripts":  cmd_list_scripts,
+    # Histórico y actualizaciones
+    "metrics_history": cmd_metrics_history,
+    "updates":         cmd_updates,
+    "apply_updates":   cmd_apply_updates,
     # Servicios y Docker
     "services":       cmd_services,
     "docker":         cmd_docker,
@@ -994,6 +1097,7 @@ if __name__ == "__main__":
     log.info("APNs cert: %s", APNS_CERT if os.path.isfile(APNS_CERT) else "NO ENCONTRADO")
 
     _load_custom_alerts()
+    _load_metrics()
 
     # Arrancar monitor en hilo background (daemon: muere con el proceso principal)
     t = threading.Thread(target=monitoring_thread, daemon=True, name="monitor")
