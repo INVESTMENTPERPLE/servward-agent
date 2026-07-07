@@ -102,7 +102,9 @@ EOF
 
 echo "==> 5/5 arranque"
 systemctl daemon-reload
-systemctl enable --now ntfy-server ntfy-agent
+systemctl enable ntfy-server ntfy-agent
+# restart (no solo enable --now) para que las ACTUALIZACIONES carguen el código nuevo
+systemctl restart ntfy-server ntfy-agent
 sleep 1
 ntfyctl status || true
 

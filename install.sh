@@ -21,7 +21,12 @@ command -v git >/dev/null 2>&1 || { echo "Necesitas 'git' instalado."; exit 1; }
 
 if [ -d "$SRC/.git" ]; then
   echo "==> Actualizando código…"
-  git -C "$SRC" pull --ff-only
+  # Robusto ante instalaciones antiguas: fija el repo correcto y alinea con
+  # origin/main aunque la copia haya divergido (respaldo en tag backup-predeploy).
+  git -C "$SRC" remote set-url origin "$REPO_URL" 2>/dev/null || true
+  git -C "$SRC" fetch origin --quiet
+  git -C "$SRC" tag -f backup-predeploy HEAD >/dev/null 2>&1 || true
+  git -C "$SRC" reset --hard origin/main
 else
   echo "==> Descargando código…"
   git clone --depth 1 "$REPO_URL" "$SRC"
