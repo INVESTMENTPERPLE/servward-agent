@@ -304,8 +304,8 @@ def cmd_kill_process(args: dict) -> dict:
     name = args.get("name", "").strip()
     if not name:
         return {"error": "Falta el nombre del proceso"}
-    if not re.match(r'^[\w\-\.]+$', name):
-        return {"error": "Nombre de proceso inválido (solo letras, números, guiones y puntos)"}
+    if not re.match(r'^[\w\-\.]+$', name) or len(re.sub(r'[^A-Za-z0-9]', '', name)) < 2:
+        return {"error": "Nombre de proceso inválido (mín. 2 caracteres alfanuméricos; sin comodines)"}
     try:
         result = subprocess.run(["pkill", "-f", name],
                                 capture_output=True, text=True, timeout=5)
@@ -592,7 +592,7 @@ def _eval_custom_alerts(metrics: dict):
 def _get_device_tokens() -> list:
     """Lee los device tokens guardados en el servidor (localhost)."""
     try:
-        req = urllib.request.Request(DEVICE_TOKEN_URL)
+        req = urllib.request.Request(DEVICE_TOKEN_URL, headers=AUTH_HEADERS)
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
             return data.get("tokens", [])
@@ -918,7 +918,7 @@ def cmd_activate_app(args: dict) -> dict:
     name = (args.get("name") or "").strip()
     if not name:
         return {"error": "falta 'name'"}
-    safe = name.replace('"', '\\"')
+    safe = name.replace('\\', '\\\\').replace('"', '\\"')
     try:
         r = subprocess.run(
             ["osascript", "-e",
@@ -935,7 +935,7 @@ def cmd_quit_app(args: dict) -> dict:
     name = (args.get("name") or "").strip()
     if not name:
         return {"error": "falta 'name'"}
-    safe = name.replace('"', '\\"')
+    safe = name.replace('\\', '\\\\').replace('"', '\\"')
     try:
         r = subprocess.run(
             ["osascript", "-e", f'tell application "{safe}" to quit'],

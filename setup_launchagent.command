@@ -6,7 +6,7 @@ set -e
 cd "$(dirname "$0")"
 BASE="$(pwd)"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
-BIND="0.0.0.0"
+BIND="127.0.0.1"   # localhost: el acceso remoto va SIEMPRE por túnel/Tailscale, nunca bind plano
 PORT="2586"
 
 # ── Token: generar uno aleatorio si no existe ─────────────────────────────────

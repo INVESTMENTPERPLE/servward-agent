@@ -290,6 +290,8 @@ def cmd_kill_process(args: dict) -> dict:
     name = args.get("name", "").strip()
     if not name:
         return {"error": "falta 'name'"}
+    if not re.match(r'^[\w\-\.]+$', name) or len(re.sub(r'[^A-Za-z0-9]', '', name)) < 2:
+        return {"error": "nombre de proceso inválido (mín. 2 alfanuméricos; sin comodines)"}
     try:
         subprocess.run(["pkill", "-f", name], timeout=5, check=False)
         return {"resultado": f"señal enviada a procesos '{name}'"}
@@ -361,7 +363,7 @@ def _can_alert(key, cooldown=ALERT_COOLDOWN_S):
 
 def _get_device_tokens():
     try:
-        req = urllib.request.Request(DEVICE_TOKEN_URL)
+        req = urllib.request.Request(DEVICE_TOKEN_URL, headers=AUTH_HEADERS)
         with urllib.request.urlopen(req, timeout=5) as resp:
             return json.loads(resp.read()).get("tokens", [])
     except Exception:

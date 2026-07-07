@@ -51,7 +51,8 @@ topics: dict[str, list] = defaultdict(list)
 topics_lock = threading.Lock()
 
 # ── Almacén de device tokens (push APNs) ─────────────────────────────────────
-DEVICE_TOKEN_FILE = "/tmp/ntfy_device_tokens.json"
+DEVICE_TOKEN_FILE = os.environ.get("DEVICE_TOKEN_FILE",
+                                   os.path.expanduser("~/.ntfy_device_tokens.json"))
 _dt_lock          = threading.Lock()
 
 def _load_device_tokens() -> list:
@@ -68,8 +69,14 @@ def _save_device_token(token: str):
         tokens = _load_device_tokens()
         if token not in tokens:
             tokens.append(token)
-        with open(DEVICE_TOKEN_FILE, "w") as f:
-            json.dump(tokens, f)
+        # 0600 y O_NOFOLLOW: no legible por otros usuarios ni redirigible por symlink.
+        data = json.dumps(tokens).encode()
+        fd = os.open(DEVICE_TOKEN_FILE,
+                     os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
 _fail_log: dict[str, list[float]] = defaultdict(list)
@@ -186,6 +193,9 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── GET /device-tokens  ──  leer tokens (solo desde localhost) ────────────
     def _handle_device_token_get(self):
+        # Requiere el token bearer: cloudflared reenvía el tráfico público a
+        # 127.0.0.1, así que el filtro por peer NO basta para protegerlo.
+        if not self._auth(): return
         ip = self.client_address[0]
         if ip not in ("127.0.0.1", "::1"):
             self._error(403, "forbidden"); return
