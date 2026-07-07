@@ -43,12 +43,13 @@ openssl x509 -noout -fingerprint -sha256 -in server.crt | sed 's/sha256 Fingerpr
 echo ""
 echo "▶ Recargando servidor con nuevo certificado..."
 
-launchctl bootout  gui/$(id -u)/com.espymelab.ntfy.server 2>/dev/null || true
+UID_="$(id -u)"
+launchctl bootout  "gui/$UID_/com.espymelab.ntfy.server" 2>/dev/null || true
 sleep 1
-launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/com.espymelab.ntfy.server.plist"
+launchctl bootstrap "gui/$UID_" "$HOME/Library/LaunchAgents/com.espymelab.ntfy.server.plist"
 sleep 2
 
-if launchctl print gui/$(id -u)/com.espymelab.ntfy.server 2>/dev/null | grep -q "state = running"; then
+if launchctl print "gui/$UID_/com.espymelab.ntfy.server" 2>/dev/null | grep -q "state = running"; then
     echo "✅ Servidor corriendo con nuevo certificado"
 else
     echo "⚠️  Comprueba: tail -10 /tmp/ntfy_server.log"

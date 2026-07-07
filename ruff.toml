@@ -1,0 +1,5 @@
+# Reglas de estilo tolerantes: ignoramos "varias sentencias por línea" y
+# "variable ambigua" (cosméticas). Se mantienen los checks importantes (F…:
+# imports sin usar, nombres indefinidos, etc.).
+[lint]
+ignore = ["E701", "E702", "E741"]

@@ -22,6 +22,7 @@ from socketserver import ThreadingMixIn
 
 # ── Configuración (todo desde env vars) ─────────────────────────────────────
 TOKEN     = os.environ.get("NTFY_TOKEN", "").strip()
+TOKEN_RO  = os.environ.get("NTFY_TOKEN_RO", "").strip()   # token de SOLO LECTURA (opcional)
 BIND_HOST = os.environ.get("NTFY_BIND",  "0.0.0.0")
 PORT      = int(os.environ.get("NTFY_PORT", "2586"))
 CERT_FILE = os.environ.get("NTFY_CERT",  os.path.expanduser("~/ntfy_certs/server.crt"))
@@ -78,6 +79,17 @@ def _save_device_token(token: str):
         finally:
             os.close(fd)
 
+def _remove_device_token(token: str):
+    with _dt_lock:
+        tokens = [t for t in _load_device_tokens() if t != token]
+        data = json.dumps(tokens).encode()
+        fd = os.open(DEVICE_TOKEN_FILE,
+                     os.O_CREAT | os.O_WRONLY | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        try:
+            os.write(fd, data)
+        finally:
+            os.close(fd)
+
 # ── Rate limiter ──────────────────────────────────────────────────────────────
 _fail_log: dict[str, list[float]] = defaultdict(list)
 _fail_lock = threading.Lock()
@@ -94,15 +106,29 @@ def _record_fail(ip: str) -> int:
         return len(_fail_log[ip])
 
 # ── Comparación de token en tiempo constante ──────────────────────────────────
-def _token_ok(header_value: str) -> bool:
-    """Evita timing attacks comparando byte a byte en tiempo constante."""
-    expected = f"Bearer {TOKEN}"
+def _ct_eq(header_value: str, secret: str) -> bool:
+    """Compara 'Bearer <secret>' byte a byte en tiempo constante (anti timing)."""
+    expected = f"Bearer {secret}"
     if len(header_value) != len(expected):
         return False
     result = 0
     for a, b in zip(header_value.encode(), expected.encode()):
         result |= a ^ b
     return result == 0
+
+def _token_scope(header_value: str):
+    """'rw' si es el token de control, 'ro' si es el de solo lectura, None si no.
+    Comprueba SIEMPRE ambos (sin cortocircuito) para no filtrar cuál falló."""
+    ok_rw = _ct_eq(header_value, TOKEN)
+    ok_ro = bool(TOKEN_RO) and _ct_eq(header_value, TOKEN_RO)
+    if ok_rw:
+        return "rw"
+    if ok_ro:
+        return "ro"
+    return None
+
+def _token_ok(header_value: str) -> bool:
+    return _token_scope(header_value) is not None
 
 # ── Handler HTTP ──────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
@@ -154,7 +180,8 @@ class Handler(BaseHTTPRequestHandler):
             self._error(429, "too many failed attempts — try again later")
             return False
         auth_header = self.headers.get("Authorization", "")
-        if not _token_ok(auth_header):
+        scope = _token_scope(auth_header)
+        if scope is None:
             if local:
                 log.warning("AUTH_FAIL ip=%-15s (local, sin bloqueo)", ip)
             else:
@@ -162,6 +189,7 @@ class Handler(BaseHTTPRequestHandler):
                 log.warning("AUTH_FAIL ip=%-15s  attempt=%d/%d", ip, count, RATE_LIMIT_MAX)
             self._error(401, "unauthorized")
             return False
+        self.auth_scope = scope
         return True
 
     # ── OPTIONS (preflight) ───────────────────────────────────────────────────
@@ -226,6 +254,11 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self._error(400, "invalid json"); return
 
+        # El broker es la ÚNICA fuente de verdad del scope: lo fija según qué token
+        # autenticó el POST y DESCARTA cualquier 'scope' que enviara el cliente.
+        if isinstance(msg, dict):
+            msg["scope"] = getattr(self, "auth_scope", "rw")
+
         envelope = json.dumps({"event": "message", "message": json.dumps(msg)}) + "\n\n"
         ip = self.client_address[0]
         log.info("PUBLISH  topic=%-22s  from=%s  bytes=%d", topic, ip, length)
@@ -240,6 +273,23 @@ class Handler(BaseHTTPRequestHandler):
             for q in dead:
                 topics[topic].remove(q)
 
+        self._json(200, {"ok": True})
+
+    # ── DELETE /device-token  ──  quitar un token APNs caducado (410)
+    def do_DELETE(self):
+        if self.path.rstrip("/") != "/device-token":
+            self._error(404, "not found"); return
+        if not self._auth(): return
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0 or length > 512:
+            self._error(400, "invalid body"); return
+        try:
+            token = json.loads(self.rfile.read(length)).get("device_token", "").strip()
+        except Exception:
+            self._error(400, "invalid json"); return
+        if token:
+            _remove_device_token(token)
+            log.info("DEVICE_TOKEN_REMOVED  token=%.8s…", token)
         self._json(200, {"ok": True})
 
     # ── GET /topic/sse  ──  suscribirse ───────────────────────────────────────
@@ -318,6 +368,9 @@ def main():
     token_hash = hashlib.sha256(TOKEN.encode()).hexdigest()
     log.info("Servidor escuchando en %s://%s:%d", proto, BIND_HOST, PORT)
     log.info("Token SHA-256: %s…%s", token_hash[:8], token_hash[-8:])
+    if TOKEN_RO:
+        ro_hash = hashlib.sha256(TOKEN_RO.encode()).hexdigest()
+        log.info("Token RO SHA-256: %s…%s (solo lectura)", ro_hash[:8], ro_hash[-8:])
 
     try:
         server.serve_forever()

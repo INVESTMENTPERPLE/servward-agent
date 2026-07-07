@@ -74,6 +74,9 @@ if not TOKEN:
 AUTH_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 SSL_CTX = ssl.create_default_context()  # verificación del sistema (Cloudflare) si es https
 
+AGENT_VERSION = "1.6.0"
+LASTBOOT_FILE = os.environ.get("LASTBOOT_FILE", os.path.join(_SCRIPT_DIR, "last_boot"))
+
 def log(msg: str):
     print(f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {msg}", flush=True)
 
@@ -92,6 +95,7 @@ def cmd_check_status(_args: dict) -> dict:
         "hostname": platform.node(),
         "os":       f"{platform.system()} {platform.release()}",
         "platform": "linux",
+        "version":  AGENT_VERSION,
         "cpu_pct":  f"{psutil.cpu_percent(interval=0.5):.0f}",
         "ram_pct":  f"{mem.percent:.0f}",
         "disk_pct": f"{disk.percent:.0f}",
@@ -369,6 +373,17 @@ def _get_device_tokens():
     except Exception:
         return []
 
+def _remove_device_token(token):
+    try:
+        req = urllib.request.Request(DEVICE_TOKEN_URL[:-1],
+                                     data=json.dumps({"device_token": token}).encode(),
+                                     method="DELETE",
+                                     headers={**AUTH_HEADERS, "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+        log(f"DEVICE_TOKEN_REMOVED (410) {token[:8]}…")
+    except Exception as e:
+        log(f"REMOVE_TOKEN_ERROR {e}")
+
 def send_push(title, body):
     """Push APNs vía curl. Sin certs (usuarios sin relay): solo log."""
     if not (os.path.isfile(APNS_CERT) and os.path.isfile(APNS_KEY)):
@@ -397,6 +412,8 @@ def send_push(title, body):
                 log(f"PUSH_SENT {title!r}")
             else:
                 log(f"PUSH_FAIL http={r.stdout.strip()}")
+                if r.stdout.strip() == "410":
+                    _remove_device_token(token)
         except Exception as e:
             log(f"PUSH_ERROR {e}")
     return ok
@@ -643,9 +660,62 @@ def _eval_custom_alerts(metrics):
         except Exception as e:
             log(f"CUSTOM_ALERT_ERROR {e}")
 
+def cmd_cert_expiry(args: dict) -> dict:
+    """Días hasta que caduca el certificado TLS de cada host (hosts=a.com,b.com:8443)."""
+    hosts = [h.strip() for h in args.get("hosts", "").split(",") if h.strip()]
+    if not hosts:
+        return {"info": "pasa hosts=dominio1.com,dominio2.com:8443"}
+    ctx = ssl.create_default_context()
+    out = {}
+    for h in hosts[:10]:
+        host, _, port = h.partition(":")
+        try:
+            with socket.create_connection((host, int(port or 443)), timeout=6) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as ss:
+                    cert = ss.getpeercert()
+            exp = ssl.cert_time_to_seconds(cert["notAfter"])
+            out[host] = f"{int((exp - time.time()) / 86400)} dias"
+        except Exception as e:
+            out[host] = f"error: {str(e)[:60]}"
+    return out
+
+def cmd_check_endpoints(args: dict) -> dict:
+    """Estado up/down + latencia de una lista de URLs (urls=https://a,https://b)."""
+    urls = [u.strip() for u in args.get("urls", "").split(",") if u.strip()]
+    if not urls:
+        return {"info": "pasa urls=https://a.com,https://b.com"}
+    out = {}
+    for u in urls[:10]:
+        t0 = time.monotonic()
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "servward"})
+            code = urllib.request.urlopen(req, timeout=8).status
+            out[u] = f"up {code} ({int((time.monotonic() - t0) * 1000)} ms)"
+        except urllib.error.HTTPError as e:
+            out[u] = f"up {e.code} ({int((time.monotonic() - t0) * 1000)} ms)"
+        except Exception as e:
+            out[u] = f"DOWN ({type(e).__name__})"
+    return out
+
+def _check_reboot():
+    try:
+        boot = int(psutil.boot_time())
+        prev = 0
+        if os.path.isfile(LASTBOOT_FILE):
+            with open(LASTBOOT_FILE) as fh:
+                prev = int((fh.read().strip() or "0"))
+        with open(LASTBOOT_FILE, "w") as fh:
+            fh.write(str(boot))
+        if prev and prev != boot:
+            up_min = max(0, int((time.time() - boot) / 60))
+            send_push("🔄 Servidor reiniciado", f"{platform.node()} se reinició hace {up_min} min")
+    except Exception as e:
+        log(f"REBOOT_CHECK_ERROR {e}")
+
 def monitoring_thread():
     log(f"Monitor iniciado — intervalo={MONITOR_INTERVAL_S}s CPU>{ALERT_CPU_PCT:.0f}% "
         f"RAM>{ALERT_RAM_PCT:.0f}% disco>{ALERT_DISK_PCT:.0f}% temp>{ALERT_TEMP_C:.0f}°C")
+    _check_reboot()
     while True:
         try:
             cpu = psutil.cpu_percent(interval=2)
@@ -670,6 +740,17 @@ def monitoring_thread():
         except Exception as e:
             log(f"MONITOR_ERROR {e}")
         time.sleep(MONITOR_INTERVAL_S)
+
+# Comandos permitidos con un token de SOLO LECTURA (monitorización).
+# Default-deny: cualquier cmd fuera de este set se rechaza si scope == "ro".
+ALLOWED_RO = {
+    "check_status", "uptime", "disks", "temperatures", "ping_service",
+    "metrics_history", "network_speed", "list_scripts", "updates",
+    "services", "docker", "last_jobs", "processes",
+    "cert_expiry", "check_endpoints",
+    "get_thresholds", "get_custom_alerts",
+    "get_volume", "tailscale_status", "list_apps",
+}
 
 # ── Mapa de comandos (mismos nombres que la app) ────────────────────────────
 COMMAND_MAP = {
@@ -707,6 +788,9 @@ COMMAND_MAP = {
     "metrics_history": cmd_metrics_history,
     "updates":         cmd_updates,
     "apply_updates":   cmd_apply_updates,
+    # Homelab
+    "cert_expiry":     cmd_cert_expiry,
+    "check_endpoints": cmd_check_endpoints,
 }
 
 # ── Publicar respuesta ──────────────────────────────────────────────────────
@@ -735,10 +819,15 @@ def handle(raw_msg: str):
         cmd    = msg.get("cmd", "")
         args   = msg.get("args", {})
         device = msg.get("device", "?")
-        log(f"CMD cmd={cmd} from={device} req_id={req_id}")
+        scope  = msg.get("scope", "rw")
+        log(f"CMD cmd={cmd} from={device} req_id={req_id} scope={scope}")
         fn = COMMAND_MAP.get(cmd)
         if fn is None:
             publish(req_id, "error", {"error": f"Comando desconocido: {cmd}"})
+            return
+        if scope == "ro" and cmd not in ALLOWED_RO:
+            log(f"RO_DENIED cmd={cmd} req_id={req_id}")
+            publish(req_id, "error", {"error": "Token de solo lectura: comando de control no permitido"})
             return
         publish(req_id, "ok", fn(args))
     except Exception as e:

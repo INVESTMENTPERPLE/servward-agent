@@ -18,6 +18,7 @@ import os
 import platform
 import re
 import shutil
+import socket
 import ssl
 import subprocess
 import sys
@@ -77,6 +78,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("ntfy-agent")
 
+# Versión del agente (se reporta a la app en check_status) y marcador de arranque.
+AGENT_VERSION = "1.6.0"
+LASTBOOT_FILE = os.environ.get("LASTBOOT_FILE", os.path.expanduser("~/.ntfy_lastboot"))
+
 # ── Contexto SSL ──────────────────────────────────────────────────────────────
 def _make_ssl_ctx() -> Optional[ssl.SSLContext]:
     if not NTFY_BASE.startswith("https"):
@@ -122,6 +127,7 @@ def cmd_check_status(_args: dict) -> dict:
         "hostname":   platform.node(),
         "os":         platform.platform(terse=True),
         "platform":   "mac",
+        "version":    AGENT_VERSION,
     }
 
 def cmd_ping_service(_args: dict) -> dict:
@@ -600,6 +606,18 @@ def _get_device_tokens() -> list:
         log.debug("No se pudieron leer device tokens: %s", e)
         return []
 
+def _remove_device_token(token: str):
+    """Pide al broker que borre un device token caducado (APNs 410)."""
+    try:
+        req = urllib.request.Request(DEVICE_TOKEN_URL[:-1],   # …/device-tokens → …/device-token
+                                     data=json.dumps({"device_token": token}).encode(),
+                                     method="DELETE",
+                                     headers={**AUTH_HEADERS, "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+        log.info("DEVICE_TOKEN_REMOVED (410) token=%.8s…", token)
+    except Exception as e:
+        log.debug("REMOVE_TOKEN_ERROR %s", e)
+
 def send_push(title: str, body: str, data: dict = None) -> bool:
     """Envía push APNs via curl HTTP/2. Devuelve True si tuvo éxito."""
     if not os.path.isfile(APNS_CERT) or not os.path.isfile(APNS_KEY):
@@ -637,6 +655,8 @@ def send_push(title: str, body: str, data: dict = None) -> bool:
             else:
                 log.warning("PUSH_FAIL  token=%.8s…  http=%s  err=%s",
                             token, code, result.stderr[:120])
+                if code == "410":            # token caducado → purgar del broker
+                    _remove_device_token(token)
         except Exception as e:
             log.error("PUSH_ERROR  %s", e)
     return success
@@ -761,10 +781,65 @@ def cmd_apply_updates(_args: dict) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+def cmd_cert_expiry(args: dict) -> dict:
+    """Días hasta que caduca el certificado TLS de cada host (hosts=a.com,b.com:8443)."""
+    hosts = [h.strip() for h in args.get("hosts", "").split(",") if h.strip()]
+    if not hosts:
+        return {"info": "pasa hosts=dominio1.com,dominio2.com:8443"}
+    ctx = ssl.create_default_context()
+    out = {}
+    for h in hosts[:10]:
+        host, _, port = h.partition(":")
+        try:
+            with socket.create_connection((host, int(port or 443)), timeout=6) as sock:
+                with ctx.wrap_socket(sock, server_hostname=host) as ss:
+                    cert = ss.getpeercert()
+            exp = ssl.cert_time_to_seconds(cert["notAfter"])
+            out[host] = f"{int((exp - time.time()) / 86400)} dias"
+        except Exception as e:
+            out[host] = f"error: {str(e)[:60]}"
+    return out
+
+def cmd_check_endpoints(args: dict) -> dict:
+    """Estado up/down + latencia de una lista de URLs (urls=https://a,https://b)."""
+    urls = [u.strip() for u in args.get("urls", "").split(",") if u.strip()]
+    if not urls:
+        return {"info": "pasa urls=https://a.com,https://b.com"}
+    out = {}
+    for u in urls[:10]:
+        t0 = time.monotonic()
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "servward"})
+            code = urllib.request.urlopen(req, timeout=8).status
+            out[u] = f"up {code} ({int((time.monotonic() - t0) * 1000)} ms)"
+        except urllib.error.HTTPError as e:
+            out[u] = f"up {e.code} ({int((time.monotonic() - t0) * 1000)} ms)"
+        except Exception as e:
+            out[u] = f"DOWN ({type(e).__name__})"
+    return out
+
+def _check_reboot():
+    """Detecta si la máquina se reinició desde la última ejecución y avisa."""
+    try:
+        boot = int(psutil.boot_time())
+        prev = 0
+        if os.path.isfile(LASTBOOT_FILE):
+            with open(LASTBOOT_FILE) as fh:
+                prev = int((fh.read().strip() or "0"))
+        with open(LASTBOOT_FILE, "w") as fh:
+            fh.write(str(boot))
+        if prev and prev != boot:
+            up_min = max(0, int((time.time() - boot) / 60))
+            send_push("🔄 Servidor reiniciado",
+                      f"{platform.node()} se reinició hace {up_min} min")
+    except Exception as e:
+        log.debug("REBOOT_CHECK_ERROR %s", e)
+
 def monitoring_thread():
     """Loop de monitoreo en background. Envía push si se superan umbrales."""
     log.info("Monitor iniciado — intervalo=%ds  CPU>%.0f%%  RAM>%.0f%%  disco>%.0f%%  temp>%.0f°C",
              MONITOR_INTERVAL_S, ALERT_CPU_PCT, ALERT_RAM_PCT, ALERT_DISK_PCT, ALERT_TEMP_C)
+    _check_reboot()
     while True:
         try:
             # CPU (promedio 2s para no fallar por picos)
@@ -946,6 +1021,17 @@ def cmd_quit_app(args: dict) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+# Comandos permitidos con un token de SOLO LECTURA (monitorización).
+# Default-deny: cualquier cmd fuera de este set se rechaza si scope == "ro".
+ALLOWED_RO = {
+    "check_status", "uptime", "disks", "temperatures", "ping_service",
+    "metrics_history", "network_speed", "list_scripts", "updates",
+    "services", "docker", "last_jobs", "processes",
+    "cert_expiry", "check_endpoints",
+    "get_thresholds", "get_custom_alerts",
+    "get_volume", "tailscale_status", "list_apps",
+}
+
 # ── Mapa de comandos ──────────────────────────────────────────────────────────
 COMMAND_MAP = {
     # Monitor
@@ -984,6 +1070,9 @@ COMMAND_MAP = {
     "metrics_history": cmd_metrics_history,
     "updates":         cmd_updates,
     "apply_updates":   cmd_apply_updates,
+    # Homelab
+    "cert_expiry":     cmd_cert_expiry,
+    "check_endpoints": cmd_check_endpoints,
     # Servicios y Docker
     "services":       cmd_services,
     "docker":         cmd_docker,
@@ -1031,11 +1120,17 @@ def handle(raw_msg: str):
         cmd    = msg.get("cmd", "")
         args   = msg.get("args", {})
         device = msg.get("device", "?")
-        log.info("CMD  cmd=%-20s  from=%s  req_id=%s", cmd, device, req_id)
+        scope  = msg.get("scope", "rw")      # lo inyecta el broker; ausente = control
+        log.info("CMD  cmd=%-20s  from=%s  req_id=%s  scope=%s", cmd, device, req_id, scope)
 
         fn = COMMAND_MAP.get(cmd)
         if fn is None:
             publish(req_id, "error", {"error": f"Comando desconocido: {cmd}"})
+            return
+
+        if scope == "ro" and cmd not in ALLOWED_RO:
+            log.warning("RO_DENIED  cmd=%s  req_id=%s", cmd, req_id)
+            publish(req_id, "error", {"error": "Token de solo lectura: comando de control no permitido"})
             return
 
         data = fn(args)

@@ -75,6 +75,10 @@ case "$CMD" in
       echo
     done
     ;;
+  update)
+    echo "== Actualizando Servward desde GitHub =="
+    curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash
+    ;;
   info)
     echo "Plataforma : $PLATFORM"
     echo "Runtime    : $RUNTIME_DIR"
@@ -91,6 +95,7 @@ ntfyctl — gestión de Servward ($PLATFORM)
 
   ntfyctl status            estado de broker + agente
   ntfyctl restart [who]     reinicia (who: broker | agent | all)
+  ntfyctl update            actualiza el codigo desde GitHub y reinicia
   ntfyctl start|stop [who]  arranca / para
   ntfyctl logs [who]        últimas líneas de log
   ntfyctl info              rutas, puerto, servicios y topics
