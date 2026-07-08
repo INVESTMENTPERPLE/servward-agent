@@ -75,7 +75,7 @@ if not TOKEN:
 AUTH_HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 SSL_CTX = ssl.create_default_context()  # verificación del sistema (Cloudflare) si es https
 
-AGENT_VERSION = "1.6.0"
+AGENT_VERSION = "1.7.0"
 LASTBOOT_FILE = os.environ.get("LASTBOOT_FILE", os.path.join(_SCRIPT_DIR, "last_boot"))
 
 def log(msg: str):

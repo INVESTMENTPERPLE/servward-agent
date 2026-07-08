@@ -80,7 +80,7 @@ logging.basicConfig(
 log = logging.getLogger("ntfy-agent")
 
 # Versión del agente (se reporta a la app en check_status) y marcador de arranque.
-AGENT_VERSION = "1.6.0"
+AGENT_VERSION = "1.7.0"
 LASTBOOT_FILE = os.environ.get("LASTBOOT_FILE", os.path.expanduser("~/.ntfy_lastboot"))
 
 # ── Contexto SSL ──────────────────────────────────────────────────────────────
