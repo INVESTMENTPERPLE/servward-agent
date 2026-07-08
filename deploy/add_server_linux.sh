@@ -108,6 +108,31 @@ systemctl daemon-reload
 systemctl enable ntfy-server ntfy-agent
 # restart (no solo enable --now) para que las ACTUALIZACIONES carguen el código nuevo
 systemctl restart ntfy-server ntfy-agent
+
+# ── Helper de auto-actualización (para "actualizar el agente desde la app") ──
+# Script root-owned (no editable por 'ntfy') + regla sudoers acotada SOLO a él.
+cat > /usr/local/sbin/servward-update <<'UPD'
+#!/usr/bin/env bash
+set -euo pipefail
+REPO="https://github.com/INVESTMENTPERPLE/servward-agent.git"
+SRC=/opt/servward-src
+if [ -d "$SRC/.git" ]; then
+  git -C "$SRC" remote set-url origin "$REPO"
+  git -C "$SRC" fetch origin -q
+  git -C "$SRC" reset --hard origin/main -q
+else
+  rm -rf "$SRC"; git clone --depth 1 "$REPO" "$SRC"
+fi
+install -o ntfy -g ntfy -m 644 "$SRC/server.py"      /opt/ntfy/server.py
+install -o ntfy -g ntfy -m 644 "$SRC/agent_linux.py" /opt/ntfy/agent_linux.py
+install -m 755 "$SRC/deploy/ntfyctl" /opt/ntfy/ntfyctl
+systemctl restart ntfy-server ntfy-agent
+UPD
+chown root:root /usr/local/sbin/servward-update
+chmod 700 /usr/local/sbin/servward-update
+printf 'ntfy ALL=(root) NOPASSWD: /usr/local/sbin/servward-update\n' > /etc/sudoers.d/servward-update
+chmod 440 /etc/sudoers.d/servward-update
+visudo -cf /etc/sudoers.d/servward-update >/dev/null 2>&1 || rm -f /etc/sudoers.d/servward-update
 sleep 1
 ntfyctl status || true
 

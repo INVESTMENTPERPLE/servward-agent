@@ -731,6 +731,18 @@ def cmd_smart(_args: dict) -> dict:
             out[dev] = "error"
     return out or {"info": "sin discos SMART detectados"}
 
+def cmd_update_agent(_args: dict) -> dict:
+    """Actualiza el agente/broker vía un helper root acotado (instalado por el instalador)."""
+    helper = "/usr/local/sbin/servward-update"
+    if not os.path.exists(helper):
+        return {"info": "Actualización desde la app no disponible: reinstala el agente (o usa 'ntfyctl update')."}
+    chk = subprocess.run(["sudo", "-n", "-l", helper], capture_output=True, text=True, timeout=5)
+    if chk.returncode != 0:
+        return {"error": "El agente no tiene permiso sudo para actualizar (reinstala el agente para configurarlo)."}
+    subprocess.Popen(["bash", "-lc", f"sleep 1; sudo -n {helper}"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    return {"status": "Actualizando… el agente se reiniciará en unos segundos", "action": "updating"}
+
 def _check_reboot():
     try:
         boot = int(psutil.boot_time())
@@ -821,6 +833,7 @@ COMMAND_MAP = {
     # Histórico y actualizaciones
     "metrics_history": cmd_metrics_history,
     "updates":         cmd_updates,
+    "update_agent":    cmd_update_agent,
     "apply_updates":   cmd_apply_updates,
     # Homelab
     "cert_expiry":     cmd_cert_expiry,

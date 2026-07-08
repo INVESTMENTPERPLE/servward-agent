@@ -846,6 +846,21 @@ def cmd_smart(_args: dict) -> dict:
             out[dev] = "error"
     return out or {"info": "sin discos SMART detectados"}
 
+def cmd_update_agent(_args: dict) -> dict:
+    """Actualiza el propio agente/broker desde GitHub y se reinicia (Mac, sin sudo)."""
+    src = os.path.expanduser("~/.ntfycontrol")
+    if not os.path.isdir(os.path.join(src, ".git")):
+        return {"error": "No encuentro ~/.ntfycontrol; actualiza con 'ntfyctl update'."}
+    uid = str(os.getuid())
+    repo = "https://github.com/INVESTMENTPERPLE/servward-agent.git"
+    script = (f'cd "{src}" && git remote set-url origin "{repo}" && git fetch origin -q && '
+              f'git reset --hard origin/main -q && '
+              f'launchctl kickstart -k "gui/{uid}/com.espymelab.ntfy.server" 2>/dev/null; '
+              f'launchctl kickstart -k "gui/{uid}/com.espymelab.ntfy.agent" 2>/dev/null')
+    subprocess.Popen(["bash", "-lc", f"sleep 1; {script}"],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    return {"status": "Actualizando… el agente se reiniciará en unos segundos", "action": "updating"}
+
 def _check_reboot():
     """Detecta si la máquina se reinició desde la última ejecución y avisa."""
     try:
@@ -1097,6 +1112,7 @@ COMMAND_MAP = {
     # Histórico y actualizaciones
     "metrics_history": cmd_metrics_history,
     "updates":         cmd_updates,
+    "update_agent":    cmd_update_agent,
     "apply_updates":   cmd_apply_updates,
     # Homelab
     "cert_expiry":     cmd_cert_expiry,
