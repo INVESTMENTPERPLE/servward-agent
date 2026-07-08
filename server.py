@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import ssl
 import sys
 import threading
@@ -90,6 +91,50 @@ def _remove_device_token(token: str):
             os.write(fd, data)
         finally:
             os.close(fd)
+
+# ── Códigos de emparejamiento (en memoria, efímeros; NO se persisten) ─────────
+PAIR_TTL_DEFAULT = 300
+PAIR_TTL_MAX     = 1800
+PAIR_TTL_MIN     = 30
+PAIR_CODE_LEN    = 10
+PAIR_MAX_ACTIVE  = 100
+PAIR_MAX_USES    = 5
+_PAIR_ALPHABET   = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # sin 0 O 1 I L
+_pairings: dict = {}
+_pair_lock = threading.Lock()
+
+def _pair_new_code():
+    return "".join(secrets.choice(_PAIR_ALPHABET) for _ in range(PAIR_CODE_LEN))
+
+def _pair_sweep_locked():
+    now = time.monotonic()
+    for c in [c for c, v in _pairings.items() if v["expires"] <= now or v["uses"] <= 0]:
+        del _pairings[c]
+
+def _pair_create(payload: dict, ttl: int, uses: int) -> str:
+    with _pair_lock:
+        _pair_sweep_locked()
+        if len(_pairings) >= PAIR_MAX_ACTIVE:
+            raise RuntimeError("too many active pairing codes")
+        code = _pair_new_code()
+        for _ in range(5):
+            if code not in _pairings:
+                break
+            code = _pair_new_code()
+        _pairings[code] = {"expires": time.monotonic() + ttl, "uses": uses, "payload": payload}
+        return code
+
+def _pair_redeem(code):
+    with _pair_lock:
+        _pair_sweep_locked()
+        entry = _pairings.get(code)
+        if not entry:
+            return None
+        entry["uses"] -= 1
+        payload = entry["payload"]
+        if entry["uses"] <= 0:
+            del _pairings[code]
+        return payload
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────
 _fail_log: dict[str, list[float]] = defaultdict(list)
@@ -231,10 +276,77 @@ class Handler(BaseHTTPRequestHandler):
         tokens = _load_device_tokens()
         self._json(200, {"tokens": tokens})
 
+    # ── POST /pair  ──  crear un código de emparejamiento (requiere token rw) ──
+    def _handle_pair_post(self):
+        if not self._auth(): return
+        if getattr(self, "auth_scope", "") != "rw":
+            self._error(403, "read-only token cannot create pairings"); return
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0 or length > 4096:
+            self._error(400, "invalid body"); return
+        try:
+            data = json.loads(self.rfile.read(length))
+            assert isinstance(data, dict)
+        except Exception:
+            self._error(400, "invalid json"); return
+        scope = str(data.get("scope") or "rw").strip().lower()
+        if scope not in ("rw", "ro"):
+            self._error(400, "invalid scope"); return
+        if scope == "ro" and not TOKEN_RO:
+            self._error(400, "read-only token not configured on server"); return
+        share_token = TOKEN_RO if scope == "ro" else TOKEN
+        def clean(key, maxlen):
+            v = data.get(key, "")
+            return v.strip()[:maxlen] if isinstance(v, str) else ""
+        payload = {"name": clean("name", 100), "url": clean("url", 300),
+                   "cmd": clean("cmd", 100), "resp": clean("resp", 100),
+                   "cf": clean("cf", 400), "token": share_token,
+                   "ro": "1" if scope == "ro" else "0"}
+        try:    ttl = int(data.get("ttl", PAIR_TTL_DEFAULT))
+        except Exception: ttl = PAIR_TTL_DEFAULT
+        ttl = max(PAIR_TTL_MIN, min(ttl, PAIR_TTL_MAX))
+        try:    uses = int(data.get("uses", 1))
+        except Exception: uses = 1
+        uses = max(1, min(uses, PAIR_MAX_USES))
+        try:
+            code = _pair_create(payload, ttl, uses)
+        except RuntimeError:
+            self._error(429, "too many active pairing codes — try later"); return
+        log.info("PAIR_CREATE scope=%s ttl=%ds uses=%d code=%.3s…", scope, ttl, uses, code)
+        self._json(200, {"code": code, "expires_in": ttl, "uses": uses})
+
+    # ── POST /redeem  ──  canjear un código (SIN token) ──────────────────────
+    def _handle_redeem_post(self):
+        ip = self._client_ip()
+        if _is_blocked(ip):
+            self._error(429, "too many attempts — try again later"); return
+        length = int(self.headers.get("Content-Length", 0))
+        if length == 0 or length > 256:
+            self._error(400, "invalid body"); return
+        try:
+            code = json.loads(self.rfile.read(length)).get("code", "")
+        except Exception:
+            self._error(400, "invalid json"); return
+        code = code.strip().upper() if isinstance(code, str) else ""
+        if len(code) != PAIR_CODE_LEN or any(ch not in _PAIR_ALPHABET for ch in code):
+            _record_fail(ip)
+            self._error(404, "invalid or expired code"); return
+        payload = _pair_redeem(code)
+        if payload is None:
+            _record_fail(ip)
+            self._error(404, "invalid or expired code"); return
+        log.info("REDEEM_OK ip=%s name=%.20s ro=%s", ip, payload.get("name", ""), payload.get("ro"))
+        self._json(200, payload)
+
     # ── POST /topic  ──  publicar ─────────────────────────────────────────────
     def do_POST(self):
-        if self.path.rstrip("/") == "/device-token":
+        _p = self.path.rstrip("/")
+        if _p == "/device-token":
             self._handle_device_token_post(); return
+        if _p == "/pair":
+            self._handle_pair_post(); return
+        if _p == "/redeem":
+            self._handle_redeem_post(); return
         parts = [p for p in self.path.strip("/").split("/") if p]
         if len(parts) != 1:
             self._error(404, "not found"); return
