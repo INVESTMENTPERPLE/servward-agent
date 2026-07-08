@@ -47,6 +47,7 @@ SCRIPTS_DIR = os.environ.get("SCRIPTS_DIR", "/opt/ntfy/scripts").strip()
 SERVICE_WHITELIST = [s.strip() for s in os.environ.get(
     "SERVICE_WHITELIST", "cloudflared,ntfy-server,ntfy-agent,nginx,ssh,docker").split(",") if s.strip()]
 RECONNECT_S = 5
+SSE_TIMEOUT = int(os.environ.get("SSE_TIMEOUT", "70"))  # watchdog: reconecta si el broker no manda datos/heartbeat en Ns
 REQ_TIMEOUT = 30
 
 # ── Alertas en background ─────────────────────────────────────────────────────
@@ -697,6 +698,39 @@ def cmd_check_endpoints(args: dict) -> dict:
             out[u] = f"DOWN ({type(e).__name__})"
     return out
 
+def cmd_smart(_args: dict) -> dict:
+    """Salud SMART de los discos (smartctl; suele requerir root -> sudo -n)."""
+    if not shutil.which("smartctl"):
+        return {"info": "smartctl no instalado (apt install smartmontools)"}
+    def _sc(a):
+        r = subprocess.run(["sudo", "-n", "smartctl"] + a, capture_output=True, text=True, timeout=15)
+        low = (r.stderr + r.stdout).lower()
+        if r.returncode != 0 and ("password is required" in low or "a terminal is required" in low):
+            r = subprocess.run(["smartctl"] + a, capture_output=True, text=True, timeout=15)
+        return r
+    try:
+        scan = _sc(["--scan"]).stdout
+    except Exception as e:
+        return {"error": str(e)}
+    out = {}
+    for line in scan.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        dev = parts[0]
+        try:
+            r = _sc(["-H", dev])
+            m = re.search(r"(?:overall-health self-assessment test result|SMART Health Status):\s*(.+)", r.stdout)
+            if m:
+                out[dev] = m.group(1).strip()
+            elif "permission" in (r.stdout + r.stderr).lower() or r.returncode != 0:
+                out[dev] = "sin permiso (sudoers para smartctl)"
+            else:
+                out[dev] = "desconocido"
+        except Exception:
+            out[dev] = "error"
+    return out or {"info": "sin discos SMART detectados"}
+
 def _check_reboot():
     try:
         boot = int(psutil.boot_time())
@@ -747,7 +781,7 @@ ALLOWED_RO = {
     "check_status", "uptime", "disks", "temperatures", "ping_service",
     "metrics_history", "network_speed", "list_scripts", "updates",
     "services", "docker", "last_jobs", "processes",
-    "cert_expiry", "check_endpoints",
+    "cert_expiry", "check_endpoints", "smart",
     "get_thresholds", "get_custom_alerts",
     "get_volume", "tailscale_status", "list_apps",
 }
@@ -791,6 +825,7 @@ COMMAND_MAP = {
     # Homelab
     "cert_expiry":     cmd_cert_expiry,
     "check_endpoints": cmd_check_endpoints,
+    "smart":           cmd_smart,
 }
 
 # ── Publicar respuesta ──────────────────────────────────────────────────────
@@ -846,7 +881,7 @@ def listen_loop():
         log(f"Conectando a {url} …")
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, context=ctx, timeout=None) as resp:
+            with urllib.request.urlopen(req, context=ctx, timeout=SSE_TIMEOUT) as resp:
                 log("Conectado. Esperando comandos…")
                 for raw in resp:
                     line = raw.decode("utf-8", errors="replace").rstrip("\r\n")

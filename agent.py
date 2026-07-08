@@ -40,6 +40,7 @@ CERT_FILE   = os.environ.get("NTFY_CERT",  os.path.expanduser("~/ntfy_certs/serv
 CMD_TOPIC   = os.environ.get("NTFY_CMD_TOPIC",  "cmd-macmini-demo")
 RESP_TOPIC  = os.environ.get("NTFY_RESP_TOPIC", "resp-iphone-demo")
 RECONNECT_S = 5
+SSE_TIMEOUT = int(os.environ.get("SSE_TIMEOUT", "70"))  # watchdog: reconecta si el broker no manda datos/heartbeat en Ns
 REQ_TIMEOUT = 30; os.environ["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + os.environ.get("PATH", "")
 
 # ── APNs push ─────────────────────────────────────────────────────────────────
@@ -818,6 +819,33 @@ def cmd_check_endpoints(args: dict) -> dict:
             out[u] = f"DOWN ({type(e).__name__})"
     return out
 
+def cmd_smart(_args: dict) -> dict:
+    """Salud SMART de los discos (requiere smartmontools: brew install smartmontools)."""
+    if not shutil.which("smartctl"):
+        return {"info": "smartctl no instalado (brew install smartmontools)"}
+    try:
+        scan = subprocess.run(["smartctl", "--scan"], capture_output=True, text=True, timeout=10).stdout
+    except Exception as e:
+        return {"error": str(e)}
+    out = {}
+    for line in scan.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        dev = parts[0]
+        try:
+            r = subprocess.run(["smartctl", "-H", dev], capture_output=True, text=True, timeout=15)
+            m = re.search(r"(?:overall-health self-assessment test result|SMART Health Status):\s*(.+)", r.stdout)
+            if m:
+                out[dev] = m.group(1).strip()
+            elif "permission" in r.stdout.lower() or r.returncode != 0:
+                out[dev] = "sin permiso"
+            else:
+                out[dev] = "desconocido"
+        except Exception:
+            out[dev] = "error"
+    return out or {"info": "sin discos SMART detectados"}
+
 def _check_reboot():
     """Detecta si la máquina se reinició desde la última ejecución y avisa."""
     try:
@@ -1027,7 +1055,7 @@ ALLOWED_RO = {
     "check_status", "uptime", "disks", "temperatures", "ping_service",
     "metrics_history", "network_speed", "list_scripts", "updates",
     "services", "docker", "last_jobs", "processes",
-    "cert_expiry", "check_endpoints",
+    "cert_expiry", "check_endpoints", "smart",
     "get_thresholds", "get_custom_alerts",
     "get_volume", "tailscale_status", "list_apps",
 }
@@ -1073,6 +1101,7 @@ COMMAND_MAP = {
     # Homelab
     "cert_expiry":     cmd_cert_expiry,
     "check_endpoints": cmd_check_endpoints,
+    "smart":           cmd_smart,
     # Servicios y Docker
     "services":       cmd_services,
     "docker":         cmd_docker,
@@ -1154,7 +1183,7 @@ def listen_loop():
         log.info("Conectando a %s…", url)
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, context=SSL_CTX, timeout=None) as resp:
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=SSE_TIMEOUT) as resp:
                 log.info("✅  Conectado. Esperando comandos…")
                 for raw in resp:
                     line = raw.decode("utf-8", errors="replace").rstrip("\r\n")

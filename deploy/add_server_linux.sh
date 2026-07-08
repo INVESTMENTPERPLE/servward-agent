@@ -31,12 +31,14 @@ if [ -f "$ENVF" ]; then
   [ -n "$TOKEN" ]      || TOKEN="$(unit_env ntfy-server NTFY_TOKEN)"
   [ -n "$CMD_TOPIC" ]  || CMD_TOPIC="$(unit_env ntfy-agent NTFY_CMD_TOPIC)"
   [ -n "$RESP_TOPIC" ] || RESP_TOPIC="$(unit_env ntfy-agent NTFY_RESP_TOPIC)"
+  TOKEN_RO="$(grep -E '^NTFY_TOKEN_RO=' "$ENVF" | cut -d= -f2- || true)"
   [ -n "$CMD_TOPIC" ]  || CMD_TOPIC="cmd-$NAME"
   [ -n "$RESP_TOPIC" ] || RESP_TOPIC="resp-$NAME"
 else
   [ -n "$TOKEN" ] || TOKEN="$(openssl rand -hex 32 2>/dev/null || head -c32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   CMD_TOPIC="cmd-$NAME"; RESP_TOPIC="resp-$NAME"
 fi
+[ -n "${TOKEN_RO:-}" ] || TOKEN_RO="$(openssl rand -hex 32 2>/dev/null || head -c32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 
 echo "==> 1/5 dependencias"
 if command -v apt-get >/dev/null 2>&1; then
@@ -56,6 +58,7 @@ echo "==> 3/5 env /etc/ntfy/ntfy.env"
 install -d -m 750 /etc/ntfy
 cat > /etc/ntfy/ntfy.env <<EOF
 NTFY_TOKEN=$TOKEN
+NTFY_TOKEN_RO=$TOKEN_RO
 NTFY_BIND=127.0.0.1
 NTFY_PORT=2586
 NTFY_CERT=/dev/null/nocert
@@ -109,10 +112,10 @@ sleep 1
 ntfyctl status || true
 
 # ── Configuración empaquetada para la app (pegar / QR) ───────────────────────
-CONFIG_JSON=$(printf '{"name":"%s","cmd":"%s","resp":"%s","token":"%s"}' \
-  "$NAME" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN")
+CONFIG_JSON=$(printf '{"name":"%s","cmd":"%s","resp":"%s","token":"%s","rotoken":"%s"}' \
+  "$NAME" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN" "$TOKEN_RO")
 CONFIG_B64=$(printf '%s' "$CONFIG_JSON" | base64 | tr -d '\n')
-DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}"
+DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}&rotoken=${TOKEN_RO}"
 
 cat <<EOF
 

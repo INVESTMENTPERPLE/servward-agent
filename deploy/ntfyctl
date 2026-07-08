@@ -79,6 +79,49 @@ case "$CMD" in
     echo "== Actualizando Servward desde GitHub =="
     curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash
     ;;
+  rotate)
+    NEW="$(openssl rand -hex 32 2>/dev/null || head -c32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    echo "== Rotación: el broker aceptará el token VIEJO y el NUEVO a la vez =="
+    if [ "$OS" = "Darwin" ]; then
+      SP="$HOME/Library/LaunchAgents/$SVC_BROKER.plist"
+      /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:NTFY_TOKEN_NEXT $NEW" "$SP" 2>/dev/null \
+        || /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:NTFY_TOKEN_NEXT string $NEW" "$SP"
+      launchctl bootout "gui/$UID_/$SVC_BROKER" 2>/dev/null || true
+      launchctl bootstrap "gui/$UID_" "$SP"
+    else
+      sudo sh -c "grep -q '^NTFY_TOKEN_NEXT=' '$ENV_FILE' && sed -i 's|^NTFY_TOKEN_NEXT=.*|NTFY_TOKEN_NEXT=$NEW|' '$ENV_FILE' || printf 'NTFY_TOKEN_NEXT=%s\n' '$NEW' >> '$ENV_FILE'"
+      sudo systemctl restart "$SVC_BROKER"
+    fi
+    echo
+    echo "Token NUEVO (ponlo en la app; el viejo sigue valiendo hasta rotate-finish):"
+    echo "  $NEW"
+    echo
+    echo "Cuando la app ya use el nuevo:  ntfyctl rotate-finish"
+    ;;
+  rotate-finish)
+    echo "== Fin de rotación: el token nuevo pasa a ser el único válido =="
+    if [ "$OS" = "Darwin" ]; then
+      SP="$HOME/Library/LaunchAgents/$SVC_BROKER.plist"
+      AP="$HOME/Library/LaunchAgents/$SVC_AGENT.plist"
+      NEW="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:NTFY_TOKEN_NEXT' "$SP" 2>/dev/null || true)"
+      [ -n "$NEW" ] || { echo "No hay rotación en curso."; exit 1; }
+      for P in "$SP" "$AP"; do
+        /usr/libexec/PlistBuddy -c "Set :EnvironmentVariables:NTFY_TOKEN $NEW" "$P" 2>/dev/null \
+          || /usr/libexec/PlistBuddy -c "Add :EnvironmentVariables:NTFY_TOKEN string $NEW" "$P"
+      done
+      /usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables:NTFY_TOKEN_NEXT" "$SP" 2>/dev/null || true
+      for L in "$SVC_BROKER" "$SVC_AGENT"; do
+        launchctl bootout "gui/$UID_/$L" 2>/dev/null || true
+        launchctl bootstrap "gui/$UID_" "$HOME/Library/LaunchAgents/$L.plist"
+      done
+    else
+      NEW="$(grep -E '^NTFY_TOKEN_NEXT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | head -1)"
+      [ -n "$NEW" ] || { echo "No hay rotación en curso."; exit 1; }
+      sudo sh -c "sed -i 's|^NTFY_TOKEN=.*|NTFY_TOKEN=$NEW|' '$ENV_FILE'; sed -i '/^NTFY_TOKEN_NEXT=/d' '$ENV_FILE'"
+      sudo systemctl restart "$SVC_BROKER" "$SVC_AGENT"
+    fi
+    echo "Hecho: el token viejo ya no funciona."
+    ;;
   info)
     echo "Plataforma : $PLATFORM"
     echo "Runtime    : $RUNTIME_DIR"
@@ -96,6 +139,8 @@ ntfyctl — gestión de Servward ($PLATFORM)
   ntfyctl status            estado de broker + agente
   ntfyctl restart [who]     reinicia (who: broker | agent | all)
   ntfyctl update            actualiza el codigo desde GitHub y reinicia
+  ntfyctl rotate            genera un token nuevo (viejo+nuevo valen a la vez)
+  ntfyctl rotate-finish     deja solo el token nuevo
   ntfyctl start|stop [who]  arranca / para
   ntfyctl logs [who]        últimas líneas de log
   ntfyctl info              rutas, puerto, servicios y topics

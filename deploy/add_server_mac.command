@@ -29,10 +29,12 @@ if [ -f "$AGENT_PLIST" ]; then
   CMD_TOPIC="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:NTFY_CMD_TOPIC' "$AGENT_PLIST" 2>/dev/null || true)"
   RESP_TOPIC="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:NTFY_RESP_TOPIC' "$AGENT_PLIST" 2>/dev/null || true)"
   WHITELIST="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:SERVICE_WHITELIST' "$AGENT_PLIST" 2>/dev/null || true)"
+  TOKEN_RO="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:NTFY_TOKEN_RO' "$AGENT_PLIST" 2>/dev/null || true)"
   [ -n "$CMD_TOPIC" ]  || CMD_TOPIC="cmd-macmini-demo"
   [ -n "$RESP_TOPIC" ] || RESP_TOPIC="resp-iphone-demo"
 fi
 [ -n "$TOKEN" ]          || TOKEN="$(openssl rand -hex 32)"
+[ -n "${TOKEN_RO:-}" ]   || TOKEN_RO="$(openssl rand -hex 32)"
 [ -n "${CMD_TOPIC:-}" ]  || CMD_TOPIC="cmd-$NAME"
 [ -n "${RESP_TOPIC:-}" ] || RESP_TOPIC="resp-$NAME"
 WL_LINE=""
@@ -52,6 +54,7 @@ mkplist() {  # label script short
   <key>ProgramArguments</key><array><string>$PY</string><string>$REPO/$2</string></array>
   <key>EnvironmentVariables</key><dict>
     <key>NTFY_TOKEN</key><string>$TOKEN</string>
+    <key>NTFY_TOKEN_RO</key><string>$TOKEN_RO</string>
     <key>NTFY_BIND</key><string>127.0.0.1</string>
     <key>NTFY_PORT</key><string>$PORT</string>
     <key>NTFY_CERT</key><string>/dev/null/nocert</string>
@@ -85,10 +88,10 @@ sleep 1
 ntfyctl status || true
 
 # ── Configuración empaquetada para la app (pegar / QR) ───────────────────────
-CONFIG_JSON=$(printf '{"name":"%s","cmd":"%s","resp":"%s","token":"%s"}' \
-  "$NAME" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN")
+CONFIG_JSON=$(printf '{"name":"%s","cmd":"%s","resp":"%s","token":"%s","rotoken":"%s"}' \
+  "$NAME" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN" "$TOKEN_RO")
 CONFIG_B64=$(printf '%s' "$CONFIG_JSON" | base64 | tr -d '\n')
-DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}"
+DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}&rotoken=${TOKEN_RO}"
 
 cat <<EOF
 

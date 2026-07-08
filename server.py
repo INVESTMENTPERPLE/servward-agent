@@ -23,6 +23,7 @@ from socketserver import ThreadingMixIn
 # ── Configuración (todo desde env vars) ─────────────────────────────────────
 TOKEN     = os.environ.get("NTFY_TOKEN", "").strip()
 TOKEN_RO  = os.environ.get("NTFY_TOKEN_RO", "").strip()   # token de SOLO LECTURA (opcional)
+TOKEN_NEXT = os.environ.get("NTFY_TOKEN_NEXT", "").strip()  # rotación: se acepta junto al de control
 BIND_HOST = os.environ.get("NTFY_BIND",  "0.0.0.0")
 PORT      = int(os.environ.get("NTFY_PORT", "2586"))
 CERT_FILE = os.environ.get("NTFY_CERT",  os.path.expanduser("~/ntfy_certs/server.crt"))
@@ -119,7 +120,7 @@ def _ct_eq(header_value: str, secret: str) -> bool:
 def _token_scope(header_value: str):
     """'rw' si es el token de control, 'ro' si es el de solo lectura, None si no.
     Comprueba SIEMPRE ambos (sin cortocircuito) para no filtrar cuál falló."""
-    ok_rw = _ct_eq(header_value, TOKEN)
+    ok_rw = _ct_eq(header_value, TOKEN) or (bool(TOKEN_NEXT) and _ct_eq(header_value, TOKEN_NEXT))
     ok_ro = bool(TOKEN_RO) and _ct_eq(header_value, TOKEN_RO)
     if ok_rw:
         return "rw"
@@ -371,6 +372,8 @@ def main():
     if TOKEN_RO:
         ro_hash = hashlib.sha256(TOKEN_RO.encode()).hexdigest()
         log.info("Token RO SHA-256: %s…%s (solo lectura)", ro_hash[:8], ro_hash[-8:])
+    if TOKEN_NEXT:
+        log.info("Token NEXT activo (rotación en curso): se acepta el viejo y el nuevo")
 
     try:
         server.serve_forever()
