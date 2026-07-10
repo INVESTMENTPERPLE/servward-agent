@@ -16,12 +16,12 @@
     body{ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
       background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; overflow-x:hidden; }
     a{ color:var(--blue); text-decoration:none; }
+    img{ max-width:100%; }
 
     /* Nav */
     .nav{ position:sticky; top:0; z-index:30; display:flex; align-items:center; justify-content:space-between;
       padding:14px 24px; background:rgba(0,0,0,0.7); backdrop-filter:blur(20px); border-bottom:1px solid var(--border); }
     .nav-logo{ font-size:1.1rem; font-weight:650; color:var(--text); display:flex; align-items:center; gap:8px; letter-spacing:-0.01em; }
-    .nav-mark{ font-size:1.2rem; }
     .nav-right{ display:flex; align-items:center; gap:12px; }
     .lang-toggle{ display:flex; gap:3px; background:var(--bg-card); border:1px solid var(--border); border-radius:980px; padding:3px; }
     .lang-toggle button{ font:inherit; font-size:0.74rem; font-weight:600; color:var(--muted); background:transparent; border:none;
@@ -42,11 +42,19 @@
     .btn-primary{ background:var(--blue); color:#fff; box-shadow:0 6px 24px rgba(41,151,255,0.45); }
     .btn-secondary{ background:rgba(255,255,255,0.08); color:var(--text); border:1px solid rgba(255,255,255,0.14); }
 
+    /* Phone frame (capturas reales) */
+    .phone{ position:relative; width:min(310px, 78vw); border-radius:52px; padding:11px;
+      background:linear-gradient(160deg,#2a2a2d,#131315); border:1px solid rgba(255,255,255,0.16);
+      box-shadow:0 40px 90px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 3px rgba(255,255,255,0.08); }
+    .phone img{ width:100%; display:block; border-radius:42px; background:#000; }
+    .phone::after{ content:""; position:absolute; inset:11px; border-radius:42px; pointer-events:none;
+      box-shadow:inset 0 0 2px rgba(255,255,255,0.12); }
+
     /* Hero */
     .hero{ position:relative; overflow:hidden; padding:72px 24px 88px; }
     .hero::before{ content:""; position:absolute; top:-25%; left:60%; transform:translateX(-50%); width:min(1000px,150vw); height:min(1000px,150vw);
       background:radial-gradient(ellipse at 50% 30%, rgba(41,151,255,0.18) 0%, rgba(191,90,242,0.08) 38%, transparent 68%); pointer-events:none; }
-    .hero-inner{ position:relative; max-width:1080px; margin:0 auto; display:grid; grid-template-columns:1.05fr 0.95fr; gap:56px; align-items:center; }
+    .hero-inner{ position:relative; max-width:1080px; margin:0 auto; display:grid; grid-template-columns:1.1fr 0.9fr; gap:56px; align-items:center; }
     @media (max-width:900px){ .hero-inner{ grid-template-columns:1fr; gap:44px; text-align:center; } }
     .eyebrow{ display:inline-flex; align-items:center; gap:8px; font-size:0.78rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;
       color:var(--blue); margin-bottom:18px; background:rgba(41,151,255,0.1); border:1px solid rgba(41,151,255,0.25); padding:6px 14px; border-radius:980px; }
@@ -56,62 +64,68 @@
     @media (max-width:900px){ .hero .tagline{ margin-left:auto; margin-right:auto; } }
     .hero-ctas{ display:flex; gap:14px; flex-wrap:wrap; }
     @media (max-width:900px){ .hero-ctas{ justify-content:center; } }
-
-    /* Device preview */
-    .preview{ position:relative; display:flex; justify-content:center; }
-    .preview::before{ content:""; position:absolute; inset:-10% -6%; background:radial-gradient(circle at 60% 40%, rgba(41,151,255,0.22), transparent 65%); pointer-events:none; }
-    .pv-card{ position:relative; width:100%; max-width:360px; background:linear-gradient(165deg,#141416,#0a0a0b); border:1px solid rgba(255,255,255,0.1);
-      border-radius:26px; padding:22px; box-shadow:0 30px 70px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03); }
-    .pv-head{ display:flex; align-items:center; gap:12px; margin-bottom:20px; }
-    .pv-dot{ width:10px; height:10px; border-radius:50%; background:var(--green); box-shadow:0 0 12px var(--green); flex-shrink:0; }
-    .pv-name{ font-size:1rem; font-weight:650; }
-    .pv-sub{ font-size:0.76rem; color:var(--muted); }
-    .pv-score{ margin-left:auto; text-align:center; }
-    .pv-score b{ font-size:1.5rem; font-weight:700; color:var(--green); display:block; line-height:1; }
-    .pv-score span{ font-size:0.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; }
-    .pv-row{ margin-bottom:15px; }
-    .pv-row:last-child{ margin-bottom:0; }
-    .pv-lab{ display:flex; justify-content:space-between; font-size:0.78rem; margin-bottom:6px; }
-    .pv-lab span:first-child{ color:var(--muted); }
-    .pv-lab span:last-child{ font-variant-numeric:tabular-nums; font-weight:600; }
-    .pv-track{ height:8px; background:rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; }
-    .pv-fill{ height:100%; border-radius:6px; animation:grow 1.3s cubic-bezier(.4,0,.2,1) both; }
-    @keyframes grow{ from{ width:0; } }
-    .pv-foot{ display:flex; gap:8px; margin-top:20px; }
-    .pv-chip{ flex:1; text-align:center; font-size:0.72rem; font-weight:600; color:var(--text); background:rgba(255,255,255,0.06);
-      border:1px solid var(--border); border-radius:10px; padding:9px 0; }
+    .hero-phone{ display:flex; justify-content:center; position:relative; }
+    .hero-phone::before{ content:""; position:absolute; inset:-12% -8%; border-radius:50%;
+      background:radial-gradient(circle at 55% 40%, rgba(41,151,255,0.25), transparent 65%); pointer-events:none; }
+    @media (prefers-reduced-motion: no-preference){
+      .hero-phone .phone{ animation:float 7s ease-in-out infinite; }
+      @keyframes float{ 0%,100%{ transform:translateY(0) rotate(0.6deg);} 50%{ transform:translateY(-12px) rotate(-0.6deg);} }
+    }
 
     /* Stats */
-    .stats{ max-width:1000px; margin:56px auto 0; display:flex; flex-wrap:wrap; border:1px solid var(--border); border-radius:16px;
-      background:var(--bg-card); backdrop-filter:blur(20px); overflow:hidden; }
+    .stats{ max-width:1000px; margin:64px auto 0; display:flex; flex-wrap:wrap; border:1px solid var(--border); border-radius:16px;
+      background:var(--bg-card); backdrop-filter:blur(20px); overflow:hidden; position:relative; }
     .stat{ flex:1; min-width:150px; padding:22px 20px; text-align:center; border-right:1px solid var(--border); }
     .stat:last-child{ border-right:none; }
     .stat b{ font-size:1.35rem; font-weight:700; display:block; margin-bottom:4px; letter-spacing:-0.02em; }
     .stat span{ font-size:0.76rem; color:var(--muted); }
 
     /* Sections */
-    section{ padding:80px 24px; }
-    .features{ background:#080808; }
-    .section-inner{ max-width:1000px; margin:0 auto; }
+    section{ padding:84px 24px; }
+    section.alt{ background:#080808; }
+    .section-inner{ max-width:1060px; margin:0 auto; }
     .section-eyebrow{ font-size:0.76rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--blue); text-align:center; margin-bottom:12px; }
     .section-title{ font-size:clamp(1.8rem,4.2vw,2.7rem); font-weight:700; letter-spacing:-0.028em; text-align:center; margin-bottom:14px; line-height:1.14; }
-    .section-sub{ text-align:center; color:var(--muted); max-width:580px; margin:0 auto 52px; line-height:1.6; font-size:1rem; }
+    .section-sub{ text-align:center; color:var(--muted); max-width:600px; margin:0 auto 52px; line-height:1.6; font-size:1rem; }
 
+    /* Galería interactiva */
+    .gallery{ display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center; max-width:960px; margin:0 auto; }
+    @media (max-width:820px){ .gallery{ grid-template-columns:1fr; } .g-phone{ order:-1; } }
+    .g-list{ display:flex; flex-direction:column; gap:12px; }
+    .g-item{ text-align:left; font:inherit; color:var(--text); background:var(--bg-card); border:1px solid var(--border);
+      border-radius:16px; padding:20px 22px; cursor:pointer; transition:border-color .25s, background .25s, transform .25s; }
+    .g-item:hover{ transform:translateX(4px); }
+    .g-item.active{ border-color:rgba(41,151,255,0.55); background:rgba(41,151,255,0.08); }
+    .g-item h3{ font-size:1rem; font-weight:650; margin-bottom:5px; display:flex; align-items:center; gap:9px; }
+    .g-item p{ font-size:0.86rem; color:var(--muted); line-height:1.55; }
+    .g-item .bar{ height:3px; border-radius:2px; background:rgba(255,255,255,0.09); margin-top:14px; overflow:hidden; display:none; }
+    .g-item.active .bar{ display:block; }
+    .g-item .bar i{ display:block; height:100%; width:0; background:var(--blue); }
+    .g-item.active .bar i{ animation:gbar 5.2s linear forwards; }
+    @media (prefers-reduced-motion: reduce){ .g-item.active .bar{ display:none; } }
+    @keyframes gbar{ to{ width:100%; } }
+    .g-phone{ display:flex; justify-content:center; position:relative; }
+    .g-phone::before{ content:""; position:absolute; inset:-10% -6%; border-radius:50%;
+      background:radial-gradient(circle at 50% 45%, rgba(191,90,242,0.16), transparent 62%); pointer-events:none; }
+    .g-phone img{ transition:opacity .3s ease; }
+    .g-phone img.fading{ opacity:0; }
+
+    /* Features grid */
     .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
     .card{ background:#0a0a0a; padding:30px 26px; transition:background .2s; position:relative; }
-    .card:hover{ background:#111; }
+    section.alt .card{ background:#0d0d0d; }
+    .card:hover{ background:#131313; }
     .card.hl{ background:linear-gradient(165deg, rgba(41,151,255,0.12), #0a0a0a 60%); }
-    .card.hl:hover{ background:linear-gradient(165deg, rgba(41,151,255,0.18), #111 60%); }
     .card-icon{ font-size:1.9rem; margin-bottom:14px; display:block; }
     .card h3{ font-size:1.02rem; font-weight:650; margin-bottom:8px; letter-spacing:-0.01em; }
     .card p{ font-size:0.88rem; color:var(--muted); line-height:1.6; }
     .tag{ display:inline-block; font-size:0.58rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#04340f;
       background:var(--green); padding:2px 7px; border-radius:980px; margin-left:7px; vertical-align:middle; }
 
-    /* How */
+    /* Steps + command */
     .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
     @media (max-width:820px){ .steps{ grid-template-columns:1fr; } }
-    .stp{ position:relative; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:28px 26px; }
+    .stp{ background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:28px 26px; }
     .stp-n{ width:32px; height:32px; border-radius:50%; background:var(--blue); color:#fff; font-weight:700; font-size:0.9rem;
       display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
     .stp h3{ font-size:1.05rem; margin-bottom:8px; }
@@ -123,35 +137,31 @@
       background:rgba(255,255,255,0.06); border:1px solid var(--border); border-radius:8px; padding:6px 11px; cursor:pointer; transition:.2s; }
     .copy-btn:hover{ color:var(--text); background:rgba(255,255,255,0.13); }
 
-    /* Beta callout */
-    .beta{ background:#000; }
+    /* Beta box */
     .beta-box{ max-width:760px; margin:0 auto; text-align:center; background:linear-gradient(165deg, rgba(41,151,255,0.12), rgba(191,90,242,0.06));
       border:1px solid rgba(41,151,255,0.28); border-radius:26px; padding:56px 32px; }
     .beta-box h2{ font-size:clamp(1.7rem,4vw,2.4rem); font-weight:700; letter-spacing:-0.025em; margin-bottom:14px; }
     .beta-box p{ color:var(--muted); font-size:1.02rem; line-height:1.6; max-width:520px; margin:0 auto 30px; }
     .beta-ctas{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
 
-    /* Open source */
-    .oss{ background:#080808; }
     .oss-box{ max-width:720px; margin:0 auto; text-align:center; }
 
-    /* Footer */
     footer{ border-top:1px solid var(--border); padding:36px 24px; text-align:center; font-size:0.82rem; color:var(--muted); }
     footer a{ color:var(--muted); }
     footer a:hover{ color:var(--text); }
     .footer-inner{ max-width:1000px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; }
     .footer-links{ display:flex; gap:20px; flex-wrap:wrap; }
 
-    /* anim */
-    @keyframes fadeUp{ from{ opacity:0; transform:translateY(20px);} to{ opacity:1; transform:none;} }
-    .hero-inner > div > *, .pv-card{ animation:fadeUp .7s ease both; }
-    .pv-card{ animation-delay:.15s; }
+    /* Reveal on scroll */
+    .reveal{ opacity:0; transform:translateY(26px); transition:opacity .7s ease, transform .7s ease; }
+    .reveal.in{ opacity:1; transform:none; }
+    @media (prefers-reduced-motion: reduce){ .reveal{ opacity:1; transform:none; transition:none; } }
   </style>
 </head>
 <body>
 
 <header class="nav">
-  <a class="nav-logo" href="/"><span class="nav-mark">🖥</span> Servward</a>
+  <a class="nav-logo" href="/"><span>🖥</span> Servward</a>
   <div class="nav-right">
     <div class="lang-toggle">
       <button data-set="es" class="active" onclick="setLang('es')">ES</button>
@@ -175,21 +185,11 @@
           <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ Ver en GitHub</a>
         </div>
       </div>
-      <div class="preview">
-        <div class="pv-card">
-          <div class="pv-head">
-            <span class="pv-dot"></span>
-            <div><div class="pv-name">mac-mini</div><div class="pv-sub">macOS · en línea</div></div>
-            <div class="pv-score"><b>98</b><span>Salud</span></div>
-          </div>
-          <div class="pv-row"><div class="pv-lab"><span>CPU</span><span>23%</span></div><div class="pv-track"><div class="pv-fill" style="width:23%;background:var(--blue)"></div></div></div>
-          <div class="pv-row"><div class="pv-lab"><span>RAM</span><span>41%</span></div><div class="pv-track"><div class="pv-fill" style="width:41%;background:var(--purple)"></div></div></div>
-          <div class="pv-row"><div class="pv-lab"><span>Disco</span><span>62%</span></div><div class="pv-track"><div class="pv-fill" style="width:62%;background:var(--orange)"></div></div></div>
-          <div class="pv-foot"><div class="pv-chip">🔄 Reiniciar</div><div class="pv-chip">⌨️ Comando</div><div class="pv-chip">🔔 Alertas</div></div>
-        </div>
+      <div class="hero-phone">
+        <div class="phone"><img src="img/app-control-es.png" alt="Servward: pestaña Control con métricas en vivo de un Mac (CPU, RAM y disco) y el agente v1.7.0 en línea" fetchpriority="high" /></div>
       </div>
     </div>
-    <div class="stats">
+    <div class="stats reveal">
       <div class="stat"><b style="color:var(--blue)">100%</b><span>Self-hosted</span></div>
       <div class="stat"><b style="color:var(--green)">0</b><span>Cuentas cloud</span></div>
       <div class="stat"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
@@ -197,12 +197,42 @@
     </div>
   </section>
 
-  <section class="features">
+  <section class="alt">
     <div class="section-inner">
-      <p class="section-eyebrow">Qué hace</p>
-      <h2 class="section-title">Todo tu servidor, controlado desde el móvil.</h2>
-      <p class="section-sub">Monitorización, control y alertas — sin exponer nada a la nube.</p>
-      <div class="grid">
+      <p class="section-eyebrow reveal">Capturas reales</p>
+      <h2 class="section-title reveal">La app, por dentro.</h2>
+      <p class="section-sub reveal">Sin maquetas: esto es Servward conectada a un servidor de verdad.</p>
+      <div class="gallery reveal" data-gallery>
+        <div class="g-list">
+          <button class="g-item active" data-shot="img/app-control-es.png">
+            <h3>⚡ Control en vivo</h3>
+            <p>CPU, RAM y disco al segundo, servicios, scripts y tus comandos — con el agente v1.7.0 en línea.</p>
+            <span class="bar"><i></i></span>
+          </button>
+          <button class="g-item" data-shot="img/app-metrics.png">
+            <h3>📈 Métricas con histórico</h3>
+            <p>Evolución real de CPU, RAM y disco: 240 muestras, una por minuto, con media y máximos.</p>
+            <span class="bar"><i></i></span>
+          </button>
+          <button class="g-item" data-shot="img/app-health.png">
+            <h3>❤️ Salud del servidor</h3>
+            <p>Puntuación 0-100, caducidad de certificados TLS, estado de tus endpoints y SMART de discos.</p>
+            <span class="bar"><i></i></span>
+          </button>
+        </div>
+        <div class="g-phone">
+          <div class="phone"><img data-gimg src="img/app-control-es.png" alt="Captura real de Servward" loading="lazy" /></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <p class="section-eyebrow reveal">Qué hace</p>
+      <h2 class="section-title reveal">Todo tu servidor, controlado desde el móvil.</h2>
+      <p class="section-sub reveal">Monitorización, control y alertas — sin exponer nada a la nube.</p>
+      <div class="grid reveal">
         <div class="card"><span class="card-icon">📊</span><h3>Monitorización en vivo</h3><p>CPU, RAM, disco y temperatura, con histórico y gráficas.</p></div>
         <div class="card"><span class="card-icon">❤️</span><h3>Salud y discos (SMART)</h3><p>Puntuación de salud y estado real de cada disco.</p></div>
         <div class="card"><span class="card-icon">🔔</span><h3>Alertas push</h3><p>Te avisa cuando un servidor cae o se dispara un umbral que tú fijas.</p></div>
@@ -215,24 +245,24 @@
     </div>
   </section>
 
-  <section>
+  <section class="alt">
     <div class="section-inner">
-      <p class="section-eyebrow">Cómo funciona</p>
-      <h2 class="section-title">Listo en minutos.</h2>
-      <div class="steps">
+      <p class="section-eyebrow reveal">Cómo funciona</p>
+      <h2 class="section-title reveal">Listo en minutos.</h2>
+      <div class="steps reveal">
         <div class="stp"><div class="stp-n">1</div><h3>Instala el agente</h3><p>Un comando en tu servidor, Mac o Linux. Conserva token y ajustes al actualizar.</p></div>
         <div class="stp"><div class="stp-n">2</div><h3>Conéctalo</h3><p>Por Tailscale (lo más fácil) o un túnel Cloudflare, con el token que imprime el instalador.</p></div>
         <div class="stp"><div class="stp-n">3</div><h3>Controla desde el iPhone</h3><p>Métricas, salud, alertas y acciones — estés donde estés.</p></div>
       </div>
-      <div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copiado ✓" onclick="copyCmd(this)">Copiar</button></div>
+      <div class="cmd reveal"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copiado ✓" onclick="copyCmd(this)">Copiar</button></div>
     </div>
   </section>
 
-  <section class="beta">
+  <section>
     <div class="section-inner">
-      <div class="beta-box">
+      <div class="beta-box reveal">
         <h2>Pruébalo antes que nadie</h2>
-        <p>Servward está en beta abierta por TestFlight. Únete, trastéalo y ayúdanos a pulirlo.</p>
+        <p>Servward está en beta por TestFlight. Únete, trastéalo y ayúdanos a pulirlo.</p>
         <div class="beta-ctas">
           <a class="btn btn-primary" href="/testers">🚀 Únete a la beta</a>
           <a class="btn btn-secondary" href="/testers">📖 Guía de la beta</a>
@@ -241,12 +271,12 @@
     </div>
   </section>
 
-  <section class="oss">
+  <section class="alt">
     <div class="section-inner oss-box">
-      <p class="section-eyebrow">Open source</p>
-      <h2 class="section-title">Tuyo de verdad.</h2>
-      <p class="section-sub">El agente es de código abierto (MIT) y se auto-hospeda en tu máquina. Sin cajas negras: tú controlas todo.</p>
-      <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ Ver el código en GitHub</a>
+      <p class="section-eyebrow reveal">Open source</p>
+      <h2 class="section-title reveal">Tuyo de verdad.</h2>
+      <p class="section-sub reveal">El agente es de código abierto (MIT) y se auto-hospeda en tu máquina. Sin cajas negras: tú controlas todo.</p>
+      <a class="btn btn-secondary reveal" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ Ver el código en GitHub</a>
     </div>
   </section>
 
@@ -266,21 +296,11 @@
           <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ View on GitHub</a>
         </div>
       </div>
-      <div class="preview">
-        <div class="pv-card">
-          <div class="pv-head">
-            <span class="pv-dot"></span>
-            <div><div class="pv-name">mac-mini</div><div class="pv-sub">macOS · online</div></div>
-            <div class="pv-score"><b>98</b><span>Health</span></div>
-          </div>
-          <div class="pv-row"><div class="pv-lab"><span>CPU</span><span>23%</span></div><div class="pv-track"><div class="pv-fill" style="width:23%;background:var(--blue)"></div></div></div>
-          <div class="pv-row"><div class="pv-lab"><span>RAM</span><span>41%</span></div><div class="pv-track"><div class="pv-fill" style="width:41%;background:var(--purple)"></div></div></div>
-          <div class="pv-row"><div class="pv-lab"><span>Disk</span><span>62%</span></div><div class="pv-track"><div class="pv-fill" style="width:62%;background:var(--orange)"></div></div></div>
-          <div class="pv-foot"><div class="pv-chip">🔄 Restart</div><div class="pv-chip">⌨️ Command</div><div class="pv-chip">🔔 Alerts</div></div>
-        </div>
+      <div class="hero-phone">
+        <div class="phone"><img src="img/app-control-en.png" alt="Servward: Control tab with live Mac metrics (CPU, RAM, disk) and agent v1.7.0 online" fetchpriority="high" /></div>
       </div>
     </div>
-    <div class="stats">
+    <div class="stats reveal">
       <div class="stat"><b style="color:var(--blue)">100%</b><span>Self-hosted</span></div>
       <div class="stat"><b style="color:var(--green)">0</b><span>Cloud accounts</span></div>
       <div class="stat"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
@@ -288,12 +308,42 @@
     </div>
   </section>
 
-  <section class="features">
+  <section class="alt">
     <div class="section-inner">
-      <p class="section-eyebrow">What it does</p>
-      <h2 class="section-title">Your whole server, from your phone.</h2>
-      <p class="section-sub">Monitoring, control and alerts — without exposing anything to the cloud.</p>
-      <div class="grid">
+      <p class="section-eyebrow reveal">Real screenshots</p>
+      <h2 class="section-title reveal">Inside the app.</h2>
+      <p class="section-sub reveal">No mockups: this is Servward connected to a real server.</p>
+      <div class="gallery reveal" data-gallery>
+        <div class="g-list">
+          <button class="g-item active" data-shot="img/app-control-en.png">
+            <h3>⚡ Live control</h3>
+            <p>CPU, RAM and disk by the second, services, scripts and your commands — agent v1.7.0 online.</p>
+            <span class="bar"><i></i></span>
+          </button>
+          <button class="g-item" data-shot="img/app-metrics.png">
+            <h3>📈 Metrics with history</h3>
+            <p>Real CPU, RAM and disk over time: 240 samples, one per minute, with average and peaks.</p>
+            <span class="bar"><i></i></span>
+          </button>
+          <button class="g-item" data-shot="img/app-health.png">
+            <h3>❤️ Server health</h3>
+            <p>0-100 score, TLS certificate expiry, endpoint status and disk SMART.</p>
+            <span class="bar"><i></i></span>
+          </button>
+        </div>
+        <div class="g-phone">
+          <div class="phone"><img data-gimg src="img/app-control-en.png" alt="Real Servward screenshot" loading="lazy" /></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <p class="section-eyebrow reveal">What it does</p>
+      <h2 class="section-title reveal">Your whole server, from your phone.</h2>
+      <p class="section-sub reveal">Monitoring, control and alerts — without exposing anything to the cloud.</p>
+      <div class="grid reveal">
         <div class="card"><span class="card-icon">📊</span><h3>Live monitoring</h3><p>CPU, RAM, disk and temperature, with history and charts.</p></div>
         <div class="card"><span class="card-icon">❤️</span><h3>Health & disks (SMART)</h3><p>A health score and real per-disk status.</p></div>
         <div class="card"><span class="card-icon">🔔</span><h3>Push alerts</h3><p>Notifies you when a server goes down or a threshold you set is crossed.</p></div>
@@ -306,24 +356,24 @@
     </div>
   </section>
 
-  <section>
+  <section class="alt">
     <div class="section-inner">
-      <p class="section-eyebrow">How it works</p>
-      <h2 class="section-title">Set up in minutes.</h2>
-      <div class="steps">
+      <p class="section-eyebrow reveal">How it works</p>
+      <h2 class="section-title reveal">Set up in minutes.</h2>
+      <div class="steps reveal">
         <div class="stp"><div class="stp-n">1</div><h3>Install the agent</h3><p>One command on your server, Mac or Linux. Keeps token and settings on update.</p></div>
         <div class="stp"><div class="stp-n">2</div><h3>Connect it</h3><p>Over Tailscale (easiest) or a Cloudflare tunnel, using the token the installer prints.</p></div>
         <div class="stp"><div class="stp-n">3</div><h3>Control from your iPhone</h3><p>Metrics, health, alerts and actions — from anywhere.</p></div>
       </div>
-      <div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copied ✓" onclick="copyCmd(this)">Copy</button></div>
+      <div class="cmd reveal"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copied ✓" onclick="copyCmd(this)">Copy</button></div>
     </div>
   </section>
 
-  <section class="beta">
+  <section>
     <div class="section-inner">
-      <div class="beta-box">
+      <div class="beta-box reveal">
         <h2>Try it before anyone else</h2>
-        <p>Servward is in open beta on TestFlight. Join, play with it, and help us polish it.</p>
+        <p>Servward is in beta on TestFlight. Join, play with it, and help us polish it.</p>
         <div class="beta-ctas">
           <a class="btn btn-primary" href="/testers">🚀 Join the beta</a>
           <a class="btn btn-secondary" href="/testers">📖 Beta guide</a>
@@ -332,12 +382,12 @@
     </div>
   </section>
 
-  <section class="oss">
+  <section class="alt">
     <div class="section-inner oss-box">
-      <p class="section-eyebrow">Open source</p>
-      <h2 class="section-title">Truly yours.</h2>
-      <p class="section-sub">The agent is open source (MIT) and self-hosted on your own machine. No black boxes: you control everything.</p>
-      <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ View the code on GitHub</a>
+      <p class="section-eyebrow reveal">Open source</p>
+      <h2 class="section-title reveal">Truly yours.</h2>
+      <p class="section-sub reveal">The agent is open source (MIT) and self-hosted on your own machine. No black boxes: you control everything.</p>
+      <a class="btn btn-secondary reveal" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ View the code on GitHub</a>
     </div>
   </section>
 
@@ -364,6 +414,7 @@
     var cta=document.querySelector('.nav-cta [data-t="cta"]');
     if(cta) cta.textContent = (l==='en'?'Join the beta':'Únete a la beta');
     document.documentElement.lang=l;
+    revealScan();
   }
   function copyCmd(btn){
     var code=btn.parentElement.querySelector('code');
@@ -373,6 +424,51 @@
     navigator.clipboard.writeText(t).then(function(){ btn.textContent=btn.getAttribute('data-done'); setTimeout(function(){ btn.textContent=orig; },1600); })
       .catch(function(){ btn.textContent='⌘C'; setTimeout(function(){ btn.textContent=orig; },1600); });
   }
+
+  // ── Galería interactiva: clic + auto-avance (pausa al interactuar) ──
+  function initGallery(root){
+    var items=root.querySelectorAll('.g-item');
+    var img=root.querySelector('[data-gimg]');
+    var idx=0, timer=null, userPaused=false;
+    function show(i, fromUser){
+      idx=i;
+      for(var k=0;k<items.length;k++){ items[k].classList.toggle('active', k===i); }
+      var src=items[i].getAttribute('data-shot');
+      if(img.getAttribute('src')!==src){
+        img.classList.add('fading');
+        setTimeout(function(){ img.setAttribute('src',src); img.onload=function(){ img.classList.remove('fading'); }; },200);
+      }
+      if(fromUser){ userPaused=true; stop(); }
+      else { restartBars(items[i]); }
+    }
+    function restartBars(it){
+      var bar=it.querySelector('.bar i'); if(!bar) return;
+      bar.style.animation='none'; void bar.offsetWidth; bar.style.animation='';
+    }
+    function next(){ show((idx+1)%items.length,false); }
+    function start(){ if(timer||userPaused) return; timer=setInterval(next,5200); }
+    function stop(){ if(timer){ clearInterval(timer); timer=null; } }
+    for(var k=0;k<items.length;k++){ (function(i){ items[i].addEventListener('click',function(){ show(i,true); }); })(k); }
+    root.addEventListener('mouseenter',stop);
+    root.addEventListener('mouseleave',function(){ if(!userPaused) start(); });
+    if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      // arrancar solo cuando la galería es visible
+      new IntersectionObserver(function(es){
+        es.forEach(function(e){ if(e.isIntersecting){ start(); } else { stop(); } });
+      },{threshold:0.3}).observe(root);
+    }
+  }
+  document.querySelectorAll('[data-gallery]').forEach(initGallery);
+
+  // ── Aparición al hacer scroll ──
+  var obs=new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); obs.unobserve(e.target); } });
+  },{threshold:0.12});
+  function revealScan(){
+    document.querySelectorAll('.lang-wrap.active .reveal:not(.in)').forEach(function(el){ obs.observe(el); });
+  }
+  revealScan();
+
   (function(){ var n=(navigator.language||'es').toLowerCase(); if(n.indexOf('es')!==0) setLang('en'); })();
 </script>
 
