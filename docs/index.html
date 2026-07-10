@@ -5,6 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Servward — Controla tus servidores desde el iPhone</title>
   <meta name="description" content="Monitoriza, controla y recibe alertas de tus servidores Mac y Linux desde el iPhone. Self-hosted, privado, sin nube. Ahora en beta." />
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="canonical" href="https://servward.espymelab.com/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Servward" />
+  <meta property="og:title" content="Servward — Controla tus servidores desde el iPhone" />
+  <meta property="og:description" content="Monitoriza, controla y recibe alertas de tus servidores Mac y Linux. Self-hosted, privado, sin nube. Ahora en beta." />
+  <meta property="og:url" content="https://servward.espymelab.com/" />
+  <meta property="og:image" content="https://servward.espymelab.com/og-card.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Servward — Controla tus servidores desde el iPhone" />
+  <meta name="twitter:description" content="Monitoriza, controla y recibe alertas de tus servidores Mac y Linux. Self-hosted, privado, sin nube." />
+  <meta name="twitter:image" content="https://servward.espymelab.com/og-card.png" />
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Servward",
+   "operatingSystem":"iOS","applicationCategory":"UtilitiesApplication",
+   "description":"Monitor and control your Mac and Linux servers from your iPhone. Self-hosted and private.",
+   "url":"https://servward.espymelab.com/","image":"https://servward.espymelab.com/og-card.png",
+   "offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},
+   "publisher":{"@type":"Organization","name":"EspymeLab"}}
+  </script>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     :root{
@@ -152,6 +175,16 @@
     .footer-inner{ max-width:1000px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; }
     .footer-links{ display:flex; gap:20px; flex-wrap:wrap; }
 
+    /* FAQ */
+    .faq{ max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+    .faq details{ background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+    .faq summary{ list-style:none; cursor:pointer; padding:18px 22px; font-weight:600; font-size:0.97rem;
+      display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .faq summary::-webkit-details-marker{ display:none; }
+    .faq summary::after{ content:"+"; color:var(--muted); font-size:1.25rem; transition:transform .25s; flex-shrink:0; }
+    .faq details[open] summary::after{ transform:rotate(45deg); }
+    .faq .a{ padding:0 22px 18px; color:var(--muted); font-size:0.9rem; line-height:1.65; }
+
     /* Reveal on scroll */
     .reveal{ opacity:0; transform:translateY(26px); transition:opacity .7s ease, transform .7s ease; }
     .reveal.in{ opacity:1; transform:none; }
@@ -260,6 +293,16 @@
 
   <section>
     <div class="section-inner">
+      <p class="section-eyebrow reveal">Dudas rápidas</p>
+      <h2 class="section-title reveal">Preguntas frecuentes</h2>
+      <div class="faq reveal" style="margin-bottom:84px">
+        <details><summary>¿Tengo que abrir puertos en el router?</summary><div class="a">No. Con Tailscale o un túnel de Cloudflare la conexión sale de tu servidor hacia fuera: nada de port-forwarding ni de exponer tu IP a internet.</div></details>
+        <details><summary>¿Qué necesita mi servidor?</summary><div class="a">Un Mac (launchd) o un Linux con systemd, con git y Python 3. El instalador de un comando monta el broker y el agente, y te imprime el token para conectar la app.</div></details>
+        <details><summary>¿Mis datos pasan por servidores de terceros?</summary><div class="a">No. La app habla directamente con tu máquina. Solo las notificaciones push viajan por APNs (Apple), sin contenido sensible.</div></details>
+        <details><summary>¿Es de pago?</summary><div class="a">El agente es open source (MIT) y gratuito para siempre. La app está ahora en beta gratuita por TestFlight.</div></details>
+        <details><summary>¿Cuántos servidores puedo controlar?</summary><div class="a">Varios: añádelos escaneando un QR y cambia entre ellos al instante. Mac y Linux mezclados, sin problema.</div></details>
+        <details><summary>¿Y si mi servidor se cae?</summary><div class="a">Recibes una alerta push al momento y una Live Activity con el tiempo que lleva caído y un botón para reintentar la conexión.</div></details>
+      </div>
       <div class="beta-box reveal">
         <h2>Pruébalo antes que nadie</h2>
         <p>Servward está en beta por TestFlight. Únete, trastéalo y ayúdanos a pulirlo.</p>
@@ -371,6 +414,16 @@
 
   <section>
     <div class="section-inner">
+      <p class="section-eyebrow reveal">Quick answers</p>
+      <h2 class="section-title reveal">Frequently asked questions</h2>
+      <div class="faq reveal" style="margin-bottom:84px">
+        <details><summary>Do I need to open ports on my router?</summary><div class="a">No. With Tailscale or a Cloudflare tunnel the connection goes outbound from your server: no port-forwarding, no exposing your IP to the internet.</div></details>
+        <details><summary>What does my server need?</summary><div class="a">A Mac (launchd) or a Linux box with systemd, plus git and Python 3. The one-command installer sets up the broker and the agent, and prints the token to connect the app.</div></details>
+        <details><summary>Does my data go through third-party servers?</summary><div class="a">No. The app talks directly to your machine. Only push notifications travel through Apple's APNs, with no sensitive content.</div></details>
+        <details><summary>Is it paid?</summary><div class="a">The agent is open source (MIT) and free forever. The app is currently in a free TestFlight beta.</div></details>
+        <details><summary>How many servers can I control?</summary><div class="a">Several: add them by scanning a QR and switch instantly. Mac and Linux mixed, no problem.</div></details>
+        <details><summary>What if my server goes down?</summary><div class="a">You get an instant push alert and a Live Activity showing how long it's been down, with a retry button.</div></details>
+      </div>
       <div class="beta-box reveal">
         <h2>Try it before anyone else</h2>
         <p>Servward is in beta on TestFlight. Join, play with it, and help us polish it.</p>
