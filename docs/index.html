@@ -1,550 +1,380 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Servward — Control your Mac from your iPhone</title>
+  <title>Servward — Controla tus servidores desde el iPhone</title>
+  <meta name="description" content="Monitoriza, controla y recibe alertas de tus servidores Mac y Linux desde el iPhone. Self-hosted, privado, sin nube. Ahora en beta." />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+    :root{
+      --bg:#000; --bg-card:rgba(255,255,255,0.04); --border:rgba(255,255,255,0.08);
+      --text:#f5f5f7; --muted:#86868b; --faint:#3a3a3c;
+      --blue:#2997ff; --green:#30d158; --purple:#bf5af2; --orange:#ff9f0a; --radius:18px;
+    }
+    html{ scroll-behavior:smooth; }
+    body{ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
+      background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+    a{ color:var(--blue); text-decoration:none; }
 
-    :root {
-      --bg:       #000000;
-      --bg-card:  rgba(255,255,255,0.04);
-      --border:   rgba(255,255,255,0.08);
-      --text:     #f5f5f7;
-      --muted:    #86868b;
-      --faint:    #3a3a3c;
-      --blue:     #2997ff;
-      --green:    #30d158;
-      --radius:   18px;
-    }
+    /* Nav */
+    .nav{ position:sticky; top:0; z-index:30; display:flex; align-items:center; justify-content:space-between;
+      padding:14px 24px; background:rgba(0,0,0,0.7); backdrop-filter:blur(20px); border-bottom:1px solid var(--border); }
+    .nav-logo{ font-size:1.1rem; font-weight:650; color:var(--text); display:flex; align-items:center; gap:8px; letter-spacing:-0.01em; }
+    .nav-mark{ font-size:1.2rem; }
+    .nav-right{ display:flex; align-items:center; gap:12px; }
+    .lang-toggle{ display:flex; gap:3px; background:var(--bg-card); border:1px solid var(--border); border-radius:980px; padding:3px; }
+    .lang-toggle button{ font:inherit; font-size:0.74rem; font-weight:600; color:var(--muted); background:transparent; border:none;
+      padding:6px 13px; border-radius:980px; cursor:pointer; transition:.2s; }
+    .lang-toggle button.active{ background:var(--blue); color:#fff; }
+    .nav-cta{ display:inline-flex; align-items:center; gap:6px; background:var(--blue); color:#fff; font-size:0.82rem; font-weight:600;
+      padding:8px 16px; border-radius:980px; transition:.2s; box-shadow:0 3px 14px rgba(41,151,255,0.35); }
+    .nav-cta:hover{ opacity:.9; transform:translateY(-1px); }
+    @media (max-width:560px){ .nav-cta span.long{ display:none; } }
 
-    html { scroll-behavior: smooth; }
+    .lang-wrap{ display:none; }
+    .lang-wrap.active{ display:block; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
-    }
+    /* Buttons */
+    .btn{ display:inline-flex; align-items:center; gap:8px; padding:14px 28px; border-radius:980px; font-size:0.95rem; font-weight:600;
+      transition:opacity .2s, transform .2s; letter-spacing:-0.01em; cursor:pointer; }
+    .btn:hover{ opacity:.9; transform:translateY(-1px); }
+    .btn-primary{ background:var(--blue); color:#fff; box-shadow:0 6px 24px rgba(41,151,255,0.45); }
+    .btn-secondary{ background:rgba(255,255,255,0.08); color:var(--text); border:1px solid rgba(255,255,255,0.14); }
 
-    /* ── Hero ─────────────────────────────────────────────────────────── */
-    .hero {
-      position: relative;
-      min-height: 100svh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 80px 24px 64px;
-      overflow: hidden;
-    }
+    /* Hero */
+    .hero{ position:relative; overflow:hidden; padding:72px 24px 88px; }
+    .hero::before{ content:""; position:absolute; top:-25%; left:60%; transform:translateX(-50%); width:min(1000px,150vw); height:min(1000px,150vw);
+      background:radial-gradient(ellipse at 50% 30%, rgba(41,151,255,0.18) 0%, rgba(191,90,242,0.08) 38%, transparent 68%); pointer-events:none; }
+    .hero-inner{ position:relative; max-width:1080px; margin:0 auto; display:grid; grid-template-columns:1.05fr 0.95fr; gap:56px; align-items:center; }
+    @media (max-width:900px){ .hero-inner{ grid-template-columns:1fr; gap:44px; text-align:center; } }
+    .eyebrow{ display:inline-flex; align-items:center; gap:8px; font-size:0.78rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;
+      color:var(--blue); margin-bottom:18px; background:rgba(41,151,255,0.1); border:1px solid rgba(41,151,255,0.25); padding:6px 14px; border-radius:980px; }
+    .hero h1{ font-size:clamp(2.6rem,6vw,4.2rem); font-weight:700; letter-spacing:-0.035em; line-height:1.05; margin-bottom:22px;
+      background:linear-gradient(180deg,#fff 0%,rgba(255,255,255,0.68) 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .hero .tagline{ font-size:clamp(1.05rem,2.2vw,1.25rem); color:var(--muted); line-height:1.6; margin-bottom:34px; max-width:520px; }
+    @media (max-width:900px){ .hero .tagline{ margin-left:auto; margin-right:auto; } }
+    .hero-ctas{ display:flex; gap:14px; flex-wrap:wrap; }
+    @media (max-width:900px){ .hero-ctas{ justify-content:center; } }
 
-    /* Sfumato glow blobs */
-    .hero::before {
-      content: "";
-      position: absolute;
-      top: -10%;
-      left: 50%;
-      transform: translateX(-50%);
-      width: min(900px, 130vw);
-      height: min(900px, 130vw);
-      background: radial-gradient(ellipse at 50% 30%,
-        rgba(41,151,255,0.18) 0%,
-        rgba(41,151,255,0.06) 40%,
-        transparent 70%);
-      pointer-events: none;
-    }
-    .hero::after {
-      content: "";
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      height: 200px;
-      background: linear-gradient(to top, #000, transparent);
-      pointer-events: none;
-    }
+    /* Device preview */
+    .preview{ position:relative; display:flex; justify-content:center; }
+    .preview::before{ content:""; position:absolute; inset:-10% -6%; background:radial-gradient(circle at 60% 40%, rgba(41,151,255,0.22), transparent 65%); pointer-events:none; }
+    .pv-card{ position:relative; width:100%; max-width:360px; background:linear-gradient(165deg,#141416,#0a0a0b); border:1px solid rgba(255,255,255,0.1);
+      border-radius:26px; padding:22px; box-shadow:0 30px 70px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.03); }
+    .pv-head{ display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+    .pv-dot{ width:10px; height:10px; border-radius:50%; background:var(--green); box-shadow:0 0 12px var(--green); flex-shrink:0; }
+    .pv-name{ font-size:1rem; font-weight:650; }
+    .pv-sub{ font-size:0.76rem; color:var(--muted); }
+    .pv-score{ margin-left:auto; text-align:center; }
+    .pv-score b{ font-size:1.5rem; font-weight:700; color:var(--green); display:block; line-height:1; }
+    .pv-score span{ font-size:0.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; }
+    .pv-row{ margin-bottom:15px; }
+    .pv-row:last-child{ margin-bottom:0; }
+    .pv-lab{ display:flex; justify-content:space-between; font-size:0.78rem; margin-bottom:6px; }
+    .pv-lab span:first-child{ color:var(--muted); }
+    .pv-lab span:last-child{ font-variant-numeric:tabular-nums; font-weight:600; }
+    .pv-track{ height:8px; background:rgba(255,255,255,0.08); border-radius:6px; overflow:hidden; }
+    .pv-fill{ height:100%; border-radius:6px; animation:grow 1.3s cubic-bezier(.4,0,.2,1) both; }
+    @keyframes grow{ from{ width:0; } }
+    .pv-foot{ display:flex; gap:8px; margin-top:20px; }
+    .pv-chip{ flex:1; text-align:center; font-size:0.72rem; font-weight:600; color:var(--text); background:rgba(255,255,255,0.06);
+      border:1px solid var(--border); border-radius:10px; padding:9px 0; }
 
-    /* App icon */
-    .icon-wrap {
-      position: relative;
-      width: 120px; height: 120px;
-      margin-bottom: 36px;
-    }
-    .icon-glow {
-      position: absolute;
-      inset: -30px;
-      background: radial-gradient(circle, rgba(41,151,255,0.3) 0%, transparent 70%);
-      border-radius: 50%;
-    }
-    .icon {
-      position: relative;
-      width: 120px; height: 120px;
-      border-radius: 27%;
-      background: linear-gradient(145deg, #1a6ecf 0%, #0a84ff 50%, #00c7ff 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 58px;
-      box-shadow:
-        0 0 0 1px rgba(255,255,255,0.15),
-        0 24px 60px rgba(10,132,255,0.45),
-        0 8px 20px rgba(0,0,0,0.6);
-    }
+    /* Stats */
+    .stats{ max-width:1000px; margin:56px auto 0; display:flex; flex-wrap:wrap; border:1px solid var(--border); border-radius:16px;
+      background:var(--bg-card); backdrop-filter:blur(20px); overflow:hidden; }
+    .stat{ flex:1; min-width:150px; padding:22px 20px; text-align:center; border-right:1px solid var(--border); }
+    .stat:last-child{ border-right:none; }
+    .stat b{ font-size:1.35rem; font-weight:700; display:block; margin-bottom:4px; letter-spacing:-0.02em; }
+    .stat span{ font-size:0.76rem; color:var(--muted); }
 
-    /* Eyebrow */
-    .eyebrow {
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--blue);
-      margin-bottom: 14px;
-    }
+    /* Sections */
+    section{ padding:80px 24px; }
+    .features{ background:#080808; }
+    .section-inner{ max-width:1000px; margin:0 auto; }
+    .section-eyebrow{ font-size:0.76rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--blue); text-align:center; margin-bottom:12px; }
+    .section-title{ font-size:clamp(1.8rem,4.2vw,2.7rem); font-weight:700; letter-spacing:-0.028em; text-align:center; margin-bottom:14px; line-height:1.14; }
+    .section-sub{ text-align:center; color:var(--muted); max-width:580px; margin:0 auto 52px; line-height:1.6; font-size:1rem; }
 
-    h1 {
-      font-size: clamp(2.6rem, 7vw, 4.4rem);
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      line-height: 1.08;
-      margin-bottom: 20px;
-      background: linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.72) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
+    .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+    .card{ background:#0a0a0a; padding:30px 26px; transition:background .2s; position:relative; }
+    .card:hover{ background:#111; }
+    .card.hl{ background:linear-gradient(165deg, rgba(41,151,255,0.12), #0a0a0a 60%); }
+    .card.hl:hover{ background:linear-gradient(165deg, rgba(41,151,255,0.18), #111 60%); }
+    .card-icon{ font-size:1.9rem; margin-bottom:14px; display:block; }
+    .card h3{ font-size:1.02rem; font-weight:650; margin-bottom:8px; letter-spacing:-0.01em; }
+    .card p{ font-size:0.88rem; color:var(--muted); line-height:1.6; }
+    .tag{ display:inline-block; font-size:0.58rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#04340f;
+      background:var(--green); padding:2px 7px; border-radius:980px; margin-left:7px; vertical-align:middle; }
 
-    .tagline {
-      font-size: clamp(1rem, 2.5vw, 1.25rem);
-      color: var(--muted);
-      max-width: 520px;
-      line-height: 1.65;
-      margin-bottom: 44px;
-      font-weight: 400;
-    }
+    /* How */
+    .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+    @media (max-width:820px){ .steps{ grid-template-columns:1fr; } }
+    .stp{ position:relative; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:28px 26px; }
+    .stp-n{ width:32px; height:32px; border-radius:50%; background:var(--blue); color:#fff; font-weight:700; font-size:0.9rem;
+      display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
+    .stp h3{ font-size:1.05rem; margin-bottom:8px; }
+    .stp p{ font-size:0.88rem; color:var(--muted); line-height:1.6; }
+    .cmd{ position:relative; background:#0c0c0c; border:1px solid rgba(255,255,255,0.09); border-radius:14px; padding:18px 92px 18px 20px;
+      overflow-x:auto; max-width:760px; margin:36px auto 0; }
+    .cmd code{ font-family:"SF Mono","JetBrains Mono",monospace; font-size:0.8rem; color:var(--green); white-space:pre; }
+    .copy-btn{ position:absolute; top:11px; right:11px; font:inherit; font-size:0.7rem; font-weight:600; color:var(--muted);
+      background:rgba(255,255,255,0.06); border:1px solid var(--border); border-radius:8px; padding:6px 11px; cursor:pointer; transition:.2s; }
+    .copy-btn:hover{ color:var(--text); background:rgba(255,255,255,0.13); }
 
-    /* CTA buttons */
-    .ctas {
-      display: flex;
-      gap: 14px;
-      flex-wrap: wrap;
-      justify-content: center;
-      margin-bottom: 64px;
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 14px 28px;
-      border-radius: 980px;
-      font-size: 0.95rem;
-      font-weight: 500;
-      text-decoration: none;
-      transition: opacity 0.2s, transform 0.2s;
-      letter-spacing: -0.01em;
-    }
-    .btn:hover { opacity: 0.85; transform: translateY(-1px); }
-    .btn-primary {
-      background: var(--blue);
-      color: #fff;
-      box-shadow: 0 4px 20px rgba(41,151,255,0.4);
-    }
-    .btn-secondary {
-      background: rgba(255,255,255,0.08);
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,0.12);
-      backdrop-filter: blur(12px);
-    }
+    /* Beta callout */
+    .beta{ background:#000; }
+    .beta-box{ max-width:760px; margin:0 auto; text-align:center; background:linear-gradient(165deg, rgba(41,151,255,0.12), rgba(191,90,242,0.06));
+      border:1px solid rgba(41,151,255,0.28); border-radius:26px; padding:56px 32px; }
+    .beta-box h2{ font-size:clamp(1.7rem,4vw,2.4rem); font-weight:700; letter-spacing:-0.025em; margin-bottom:14px; }
+    .beta-box p{ color:var(--muted); font-size:1.02rem; line-height:1.6; max-width:520px; margin:0 auto 30px; }
+    .beta-ctas{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
 
-    /* Divider */
-    .divider {
-      position: relative;
-      width: 100%;
-      max-width: 900px;
-      height: 1px;
-    }
-    .divider::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
-    }
+    /* Open source */
+    .oss{ background:#080808; }
+    .oss-box{ max-width:720px; margin:0 auto; text-align:center; }
 
-    /* ── Stat bar ─────────────────────────────────────────────────────── */
-    .stats {
-      display: flex;
-      gap: 0;
-      justify-content: center;
-      align-items: stretch;
-      flex-wrap: wrap;
-      margin-top: 0;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      background: var(--bg-card);
-      backdrop-filter: blur(20px);
-      overflow: hidden;
-    }
-    .stat {
-      padding: 20px 36px;
-      text-align: center;
-      border-right: 1px solid var(--border);
-      flex: 1;
-      min-width: 140px;
-    }
-    .stat:last-child { border-right: none; }
-    .stat-val {
-      font-size: 1.5rem;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      display: block;
-      margin-bottom: 4px;
-    }
-    .stat-lbl {
-      font-size: 0.75rem;
-      color: var(--muted);
-      letter-spacing: 0.02em;
-    }
+    /* Footer */
+    footer{ border-top:1px solid var(--border); padding:36px 24px; text-align:center; font-size:0.82rem; color:var(--muted); }
+    footer a{ color:var(--muted); }
+    footer a:hover{ color:var(--text); }
+    .footer-inner{ max-width:1000px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; }
+    .footer-links{ display:flex; gap:20px; flex-wrap:wrap; }
 
-    /* ── Section shared ───────────────────────────────────────────────── */
-    section { padding: 80px 24px; }
-
-    .section-inner { max-width: 960px; margin: 0 auto; }
-
-    .section-eyebrow {
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: var(--blue);
-      text-align: center;
-      margin-bottom: 14px;
-    }
-
-    .section-title {
-      font-size: clamp(1.7rem, 4.5vw, 2.8rem);
-      font-weight: 700;
-      letter-spacing: -0.025em;
-      text-align: center;
-      margin-bottom: 56px;
-      line-height: 1.15;
-    }
-
-    /* ── Features grid ───────────────────────────────────────────────── */
-    .features { background: #080808; }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 1px;
-      background: var(--border);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-
-    .card {
-      background: #0a0a0a;
-      padding: 32px 28px;
-      transition: background 0.2s;
-      position: relative;
-    }
-    .card:hover { background: #111111; }
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0; left: 28px; right: 28px;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
-    }
-
-    .card-icon {
-      font-size: 2rem;
-      margin-bottom: 16px;
-      display: block;
-    }
-    .card h3 {
-      font-size: 1rem;
-      font-weight: 600;
-      margin-bottom: 8px;
-      letter-spacing: -0.01em;
-    }
-    .card p {
-      font-size: 0.875rem;
-      color: var(--muted);
-      line-height: 1.65;
-    }
-
-    /* ── Install ──────────────────────────────────────────────────────── */
-    .install { background: #000; }
-
-    .install-box {
-      max-width: 680px;
-      margin: 0 auto;
-      text-align: center;
-    }
-    .install-box .desc {
-      color: var(--muted);
-      line-height: 1.7;
-      font-size: 1rem;
-      margin-bottom: 36px;
-    }
-
-    pre {
-      background: #0c0c0c;
-      border: 1px solid rgba(255,255,255,0.09);
-      border-radius: 14px;
-      padding: 24px 28px;
-      text-align: left;
-      font-family: "SF Mono", "JetBrains Mono", "Fira Code", monospace;
-      font-size: 0.83rem;
-      color: var(--green);
-      overflow-x: auto;
-      line-height: 1.9;
-      margin-bottom: 32px;
-      position: relative;
-    }
-    pre::before {
-      content: "terminal";
-      position: absolute;
-      top: 12px; right: 16px;
-      font-size: 0.68rem;
-      font-family: -apple-system, sans-serif;
-      color: var(--faint);
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-    }
-
-    /* Options */
-    .options {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 36px;
-      text-align: left;
-    }
-    @media (max-width: 520px) { .options { grid-template-columns: 1fr; } }
-
-    .option {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 20px 22px;
-    }
-    .option-label {
-      font-size: 0.72rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--blue);
-      margin-bottom: 6px;
-    }
-    .option h4 { font-size: 0.95rem; font-weight: 600; margin-bottom: 6px; }
-    .option p  { font-size: 0.83rem; color: var(--muted); line-height: 1.6; }
-
-    /* ── Footer ───────────────────────────────────────────────────────── */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 36px 24px;
-      text-align: center;
-      font-size: 0.82rem;
-      color: var(--muted);
-    }
-    footer a { color: var(--muted); text-decoration: none; }
-    footer a:hover { color: var(--text); }
-    .footer-inner {
-      max-width: 960px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-    .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
-
-    /* ── Fade-in animation ─────────────────────────────────────────────── */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .hero > * {
-      animation: fadeUp 0.7s ease both;
-    }
-    .hero .icon-wrap  { animation-delay: 0.05s; }
-    .hero .eyebrow    { animation-delay: 0.12s; }
-    .hero h1          { animation-delay: 0.18s; }
-    .hero .tagline    { animation-delay: 0.24s; }
-    .hero .ctas       { animation-delay: 0.30s; }
-    .hero .stats      { animation-delay: 0.38s; }
+    /* anim */
+    @keyframes fadeUp{ from{ opacity:0; transform:translateY(20px);} to{ opacity:1; transform:none;} }
+    .hero-inner > div > *, .pv-card{ animation:fadeUp .7s ease both; }
+    .pv-card{ animation-delay:.15s; }
   </style>
 </head>
 <body>
 
-<!-- ── HERO ─────────────────────────────────────────────────────────────── -->
-<section class="hero">
-  <div class="icon-wrap">
-    <div class="icon-glow"></div>
-    <div class="icon">🖥</div>
-  </div>
-
-  <p class="eyebrow">EspymeLab · Open Source</p>
-
-  <h1>Servward</h1>
-
-  <p class="tagline">Control your Mac from anywhere — monitor performance,
-    manage audio, run scripts, and get push alerts when things go wrong.</p>
-
-  <div class="ctas">
-    <a class="btn btn-primary" href="https://github.com/INVESTMENTPERPLE/servward-agent">
-      ⬇&thinsp; Download Mac Agent
-    </a>
-    <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">
-      ★&thinsp; View on GitHub
-    </a>
-  </div>
-
-  <div class="stats">
-    <div class="stat">
-      <span class="stat-val" style="color:#2997ff">100%</span>
-      <span class="stat-lbl">Self-hosted</span>
+<header class="nav">
+  <a class="nav-logo" href="/"><span class="nav-mark">🖥</span> Servward</a>
+  <div class="nav-right">
+    <div class="lang-toggle">
+      <button data-set="es" class="active" onclick="setLang('es')">ES</button>
+      <button data-set="en" onclick="setLang('en')">EN</button>
     </div>
-    <div class="stat">
-      <span class="stat-val" style="color:#30d158">0</span>
-      <span class="stat-lbl">Cloud accounts</span>
-    </div>
-    <div class="stat">
-      <span class="stat-val" style="color:#ff9f0a">MIT</span>
-      <span class="stat-lbl">Open source</span>
-    </div>
+    <a class="nav-cta" href="/testers"><span>🚀</span><span class="long" data-t="cta">Únete a la beta</span></a>
   </div>
-</section>
+</header>
 
-<!-- ── FEATURES ─────────────────────────────────────────────────────────── -->
-<section class="features">
-  <div class="section-inner">
-    <p class="section-eyebrow">What it does</p>
-    <h2 class="section-title">Everything you need,<br>nothing you don't.</h2>
+<!-- ═══════════ ESPAÑOL ═══════════ -->
+<div class="lang-wrap active" data-lang="es">
 
-    <div class="grid">
-      <div class="card">
-        <span class="card-icon">📊</span>
-        <h3>Live Monitoring</h3>
-        <p>CPU, RAM, disk usage, and temperature — check your Mac's health from anywhere.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">🔔</span>
-        <h3>Push Alerts</h3>
-        <p>Get notified on your iPhone when CPU spikes, RAM fills up, or disk runs low.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">🔊</span>
-        <h3>Audio Control</h3>
-        <p>Mute, unmute, and set volume — no need to be at your desk.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">⚙️</span>
-        <h3>System Control</h3>
-        <p>Sleep, restart, or shut down your Mac remotely. Kill rogue processes.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">📷</span>
-        <h3>Screenshot</h3>
-        <p>Capture your Mac's screen and see it instantly on your iPhone.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">🔒</span>
-        <h3>Fully Private</h3>
-        <p>Your data never leaves your own infrastructure. No cloud accounts required.</p>
-      </div>
-      <div class="card">
-        <span class="card-icon">🌐</span>
-        <h3>Tailscale or Cloudflare</h3>
-        <p>Connect via Tailscale (easiest) or Cloudflare Tunnel for access from any network without extra apps.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── PRICING ──────────────────────────────────────────────────────────── -->
-<section class="pricing" style="background:#000;">
-  <div class="section-inner">
-    <p class="section-eyebrow">Pricing</p>
-    <h2 class="section-title">Start free. Grow when you need to.</h2>
-
-    <div class="grid">
-      <div class="card">
-        <span class="card-icon">🆓</span>
-        <h3>Free</h3>
-        <p>Everything to run one machine over Tailscale.</p>
-        <p style="color:var(--muted);font-size:0.875rem;line-height:2;margin-top:12px;">
-          ✓ Connect over Tailscale<br>
-          ✓ One server<br>
-          ✓ Built-in controls — monitor, audio, power, alerts<br>
-          ✓ Open-source agent, forever
-        </p>
-      </div>
-      <div class="card">
-        <span class="card-icon">⭐</span>
-        <h3>Pro</h3>
-        <p>The full toolkit — a small subscription per extra server.</p>
-        <p style="color:var(--muted);font-size:0.875rem;line-height:2;margin-top:12px;">
-          ✓ Create your own commands &amp; buttons<br>
-          ✓ Remote access via Cloudflare Tunnel<br>
-          ✓ Screenshots &amp; advanced controls<br>
-          ✓ Each additional server
-        </p>
-      </div>
-    </div>
-    <p style="text-align:center;color:var(--muted);font-size:0.85rem;margin-top:24px;">The Servward agent is open source (MIT) and free to self-host, always.</p>
-  </div>
-</section>
-
-<!-- ── INSTALL ───────────────────────────────────────────────────────────── -->
-<section class="install">
-  <div class="section-inner">
-    <p class="section-eyebrow">Get started</p>
-    <h2 class="section-title">Set up in minutes.</h2>
-
-    <div class="install-box">
-      <p class="desc">Download the Mac agent from GitHub, run the installer, and connect
-        using Tailscale or Cloudflare Tunnel. Then configure the iOS app with your server URL and token.</p>
-
-      <pre>git clone https://github.com/INVESTMENTPERPLE/servward-agent.git
-cd servward-agent
-bash setup_launchagent.command</pre>
-
-      <div class="options">
-        <div class="option">
-          <p class="option-label">Option A</p>
-          <h4>Tailscale</h4>
-          <p>Install Tailscale on your Mac and iPhone. Use the 100.x.x.x address as your server URL. Zero config.</p>
-        </div>
-        <div class="option">
-          <p class="option-label">Option B</p>
-          <h4>Cloudflare Tunnel</h4>
-          <p>Expose your Mac with a public domain. No extra app needed on the client side.</p>
+  <section class="hero">
+    <div class="hero-inner">
+      <div>
+        <span class="eyebrow">🚀 Ahora en beta · TestFlight</span>
+        <h1>Tus servidores, en el bolsillo.</h1>
+        <p class="tagline">Monitoriza, controla y recibe alertas de tus servidores <strong>Mac y Linux</strong> desde el iPhone. Self-hosted, privado y sin nube.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="/testers">🚀 Únete a la beta</a>
+          <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ Ver en GitHub</a>
         </div>
       </div>
-
-      <a class="btn btn-primary" href="https://github.com/INVESTMENTPERPLE/servward-agent">
-        View full setup guide →
-      </a>
+      <div class="preview">
+        <div class="pv-card">
+          <div class="pv-head">
+            <span class="pv-dot"></span>
+            <div><div class="pv-name">mac-mini</div><div class="pv-sub">macOS · en línea</div></div>
+            <div class="pv-score"><b>98</b><span>Salud</span></div>
+          </div>
+          <div class="pv-row"><div class="pv-lab"><span>CPU</span><span>23%</span></div><div class="pv-track"><div class="pv-fill" style="width:23%;background:var(--blue)"></div></div></div>
+          <div class="pv-row"><div class="pv-lab"><span>RAM</span><span>41%</span></div><div class="pv-track"><div class="pv-fill" style="width:41%;background:var(--purple)"></div></div></div>
+          <div class="pv-row"><div class="pv-lab"><span>Disco</span><span>62%</span></div><div class="pv-track"><div class="pv-fill" style="width:62%;background:var(--orange)"></div></div></div>
+          <div class="pv-foot"><div class="pv-chip">🔄 Reiniciar</div><div class="pv-chip">⌨️ Comando</div><div class="pv-chip">🔔 Alertas</div></div>
+        </div>
+      </div>
     </div>
-  </div>
-</section>
+    <div class="stats">
+      <div class="stat"><b style="color:var(--blue)">100%</b><span>Self-hosted</span></div>
+      <div class="stat"><b style="color:var(--green)">0</b><span>Cuentas cloud</span></div>
+      <div class="stat"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
+      <div class="stat"><b>Mac + Linux</b><span>Compatible</span></div>
+    </div>
+  </section>
 
-<!-- ── FOOTER ───────────────────────────────────────────────────────────── -->
+  <section class="features">
+    <div class="section-inner">
+      <p class="section-eyebrow">Qué hace</p>
+      <h2 class="section-title">Todo tu servidor, controlado desde el móvil.</h2>
+      <p class="section-sub">Monitorización, control y alertas — sin exponer nada a la nube.</p>
+      <div class="grid">
+        <div class="card"><span class="card-icon">📊</span><h3>Monitorización en vivo</h3><p>CPU, RAM, disco y temperatura, con histórico y gráficas.</p></div>
+        <div class="card"><span class="card-icon">❤️</span><h3>Salud y discos (SMART)</h3><p>Puntuación de salud y estado real de cada disco.</p></div>
+        <div class="card"><span class="card-icon">🔔</span><h3>Alertas push</h3><p>Te avisa cuando un servidor cae o se dispara un umbral que tú fijas.</p></div>
+        <div class="card"><span class="card-icon">🎛️</span><h3>Control remoto</h3><p>Reinicia servicios, ejecuta comandos, ajusta volumen, suspende o mata procesos.</p></div>
+        <div class="card hl"><span class="card-icon">🔄</span><h3>Actualiza el agente desde la app<span class="tag">Nuevo</span></h3><p>Un toque en Ajustes. Mac y Linux, sin abrir el terminal.</p></div>
+        <div class="card"><span class="card-icon">📷</span><h3>Multi-servidor + QR</h3><p>Añade todos tus servidores escaneando un QR. Cambia entre ellos al instante.</p></div>
+        <div class="card"><span class="card-icon">🧩</span><h3>Widget y Live Activity</h3><p>Estado en la pantalla de inicio y alertas de caída en la Isla Dinámica.</p></div>
+        <div class="card"><span class="card-icon">🔒</span><h3>100% privado</h3><p>La app habla directamente con tu servidor. Sin nube, sin cuentas, sin intermediarios.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <p class="section-eyebrow">Cómo funciona</p>
+      <h2 class="section-title">Listo en minutos.</h2>
+      <div class="steps">
+        <div class="stp"><div class="stp-n">1</div><h3>Instala el agente</h3><p>Un comando en tu servidor, Mac o Linux. Conserva token y ajustes al actualizar.</p></div>
+        <div class="stp"><div class="stp-n">2</div><h3>Conéctalo</h3><p>Por Tailscale (lo más fácil) o un túnel Cloudflare, con el token que imprime el instalador.</p></div>
+        <div class="stp"><div class="stp-n">3</div><h3>Controla desde el iPhone</h3><p>Métricas, salud, alertas y acciones — estés donde estés.</p></div>
+      </div>
+      <div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copiado ✓" onclick="copyCmd(this)">Copiar</button></div>
+    </div>
+  </section>
+
+  <section class="beta">
+    <div class="section-inner">
+      <div class="beta-box">
+        <h2>Pruébalo antes que nadie</h2>
+        <p>Servward está en beta abierta por TestFlight. Únete, trastéalo y ayúdanos a pulirlo.</p>
+        <div class="beta-ctas">
+          <a class="btn btn-primary" href="/testers">🚀 Únete a la beta</a>
+          <a class="btn btn-secondary" href="/testers">📖 Guía de la beta</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="oss">
+    <div class="section-inner oss-box">
+      <p class="section-eyebrow">Open source</p>
+      <h2 class="section-title">Tuyo de verdad.</h2>
+      <p class="section-sub">El agente es de código abierto (MIT) y se auto-hospeda en tu máquina. Sin cajas negras: tú controlas todo.</p>
+      <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ Ver el código en GitHub</a>
+    </div>
+  </section>
+
+</div>
+
+<!-- ═══════════ ENGLISH ═══════════ -->
+<div class="lang-wrap" data-lang="en">
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div>
+        <span class="eyebrow">🚀 Now in beta · TestFlight</span>
+        <h1>Your servers, in your pocket.</h1>
+        <p class="tagline">Monitor, control and get alerts from your <strong>Mac and Linux</strong> servers on your iPhone. Self-hosted, private, no cloud.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="/testers">🚀 Join the beta</a>
+          <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ View on GitHub</a>
+        </div>
+      </div>
+      <div class="preview">
+        <div class="pv-card">
+          <div class="pv-head">
+            <span class="pv-dot"></span>
+            <div><div class="pv-name">mac-mini</div><div class="pv-sub">macOS · online</div></div>
+            <div class="pv-score"><b>98</b><span>Health</span></div>
+          </div>
+          <div class="pv-row"><div class="pv-lab"><span>CPU</span><span>23%</span></div><div class="pv-track"><div class="pv-fill" style="width:23%;background:var(--blue)"></div></div></div>
+          <div class="pv-row"><div class="pv-lab"><span>RAM</span><span>41%</span></div><div class="pv-track"><div class="pv-fill" style="width:41%;background:var(--purple)"></div></div></div>
+          <div class="pv-row"><div class="pv-lab"><span>Disk</span><span>62%</span></div><div class="pv-track"><div class="pv-fill" style="width:62%;background:var(--orange)"></div></div></div>
+          <div class="pv-foot"><div class="pv-chip">🔄 Restart</div><div class="pv-chip">⌨️ Command</div><div class="pv-chip">🔔 Alerts</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b style="color:var(--blue)">100%</b><span>Self-hosted</span></div>
+      <div class="stat"><b style="color:var(--green)">0</b><span>Cloud accounts</span></div>
+      <div class="stat"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
+      <div class="stat"><b>Mac + Linux</b><span>Supported</span></div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="section-inner">
+      <p class="section-eyebrow">What it does</p>
+      <h2 class="section-title">Your whole server, from your phone.</h2>
+      <p class="section-sub">Monitoring, control and alerts — without exposing anything to the cloud.</p>
+      <div class="grid">
+        <div class="card"><span class="card-icon">📊</span><h3>Live monitoring</h3><p>CPU, RAM, disk and temperature, with history and charts.</p></div>
+        <div class="card"><span class="card-icon">❤️</span><h3>Health & disks (SMART)</h3><p>A health score and real per-disk status.</p></div>
+        <div class="card"><span class="card-icon">🔔</span><h3>Push alerts</h3><p>Notifies you when a server goes down or a threshold you set is crossed.</p></div>
+        <div class="card"><span class="card-icon">🎛️</span><h3>Remote control</h3><p>Restart services, run commands, set volume, sleep or kill processes.</p></div>
+        <div class="card hl"><span class="card-icon">🔄</span><h3>Update the agent from the app<span class="tag">New</span></h3><p>One tap in Settings. Mac and Linux, no terminal needed.</p></div>
+        <div class="card"><span class="card-icon">📷</span><h3>Multi-server + QR</h3><p>Add all your servers by scanning a QR. Switch between them instantly.</p></div>
+        <div class="card"><span class="card-icon">🧩</span><h3>Widget & Live Activity</h3><p>Status on your Home Screen and down alerts in the Dynamic Island.</p></div>
+        <div class="card"><span class="card-icon">🔒</span><h3>100% private</h3><p>The app talks directly to your server. No cloud, no accounts, no middlemen.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <p class="section-eyebrow">How it works</p>
+      <h2 class="section-title">Set up in minutes.</h2>
+      <div class="steps">
+        <div class="stp"><div class="stp-n">1</div><h3>Install the agent</h3><p>One command on your server, Mac or Linux. Keeps token and settings on update.</p></div>
+        <div class="stp"><div class="stp-n">2</div><h3>Connect it</h3><p>Over Tailscale (easiest) or a Cloudflare tunnel, using the token the installer prints.</p></div>
+        <div class="stp"><div class="stp-n">3</div><h3>Control from your iPhone</h3><p>Metrics, health, alerts and actions — from anywhere.</p></div>
+      </div>
+      <div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copied ✓" onclick="copyCmd(this)">Copy</button></div>
+    </div>
+  </section>
+
+  <section class="beta">
+    <div class="section-inner">
+      <div class="beta-box">
+        <h2>Try it before anyone else</h2>
+        <p>Servward is in open beta on TestFlight. Join, play with it, and help us polish it.</p>
+        <div class="beta-ctas">
+          <a class="btn btn-primary" href="/testers">🚀 Join the beta</a>
+          <a class="btn btn-secondary" href="/testers">📖 Beta guide</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="oss">
+    <div class="section-inner oss-box">
+      <p class="section-eyebrow">Open source</p>
+      <h2 class="section-title">Truly yours.</h2>
+      <p class="section-sub">The agent is open source (MIT) and self-hosted on your own machine. No black boxes: you control everything.</p>
+      <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ View the code on GitHub</a>
+    </div>
+  </section>
+
+</div>
+
 <footer>
   <div class="footer-inner">
     <span>© 2026 EspymeLab</span>
     <div class="footer-links">
-      <a href="privacy.html">Privacy Policy</a>
-      <a href="eula.html">Terms</a>
+      <a href="/testers">Beta</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/eula">Terms</a>
       <a href="https://github.com/INVESTMENTPERPLE/servward-agent">GitHub</a>
     </div>
   </div>
 </footer>
+
+<script>
+  function setLang(l){
+    var w=document.querySelectorAll('.lang-wrap');
+    for(var i=0;i<w.length;i++){ w[i].classList.toggle('active', w[i].getAttribute('data-lang')===l); }
+    var b=document.querySelectorAll('.lang-toggle button');
+    for(var j=0;j<b.length;j++){ b[j].classList.toggle('active', b[j].getAttribute('data-set')===l); }
+    var cta=document.querySelector('.nav-cta [data-t="cta"]');
+    if(cta) cta.textContent = (l==='en'?'Join the beta':'Únete a la beta');
+    document.documentElement.lang=l;
+  }
+  function copyCmd(btn){
+    var code=btn.parentElement.querySelector('code');
+    var orig=btn.getAttribute('data-orig')||btn.textContent;
+    btn.setAttribute('data-orig',orig);
+    var t=(code.innerText||code.textContent).trim();
+    navigator.clipboard.writeText(t).then(function(){ btn.textContent=btn.getAttribute('data-done'); setTimeout(function(){ btn.textContent=orig; },1600); })
+      .catch(function(){ btn.textContent='⌘C'; setTimeout(function(){ btn.textContent=orig; },1600); });
+  }
+  (function(){ var n=(navigator.language||'es').toLowerCase(); if(n.indexOf('es')!==0) setLang('en'); })();
+</script>
 
 </body>
 </html>
