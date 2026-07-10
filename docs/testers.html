@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beta Guide — Servward</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #000000; --text: #f5f5f7; --muted: #86868b;
+      --body-text: #d1d1d6; --border: rgba(255,255,255,0.08); --blue: #2997ff;
+      --code-bg: #1c1c1e;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+      background: var(--bg); color: var(--text);
+      -webkit-font-smoothing: antialiased; line-height: 1.7;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; padding: 48px 24px 120px; }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    nav { display: flex; align-items: center; justify-content: space-between; padding-bottom: 56px; }
+    .nav-logo { font-size: 17px; font-weight: 600; color: var(--text); text-decoration: none; }
+    .nav-back { font-size: 15px; color: var(--blue); }
+    h1 { font-size: clamp(32px, 6vw, 48px); font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .updated { font-size: 14px; color: var(--muted); margin-bottom: 40px; }
+    .lang { font-size: 13px; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase;
+            color: var(--muted); margin: 56px 0 8px; }
+    h2 { font-size: 22px; font-weight: 600; margin: 36px 0 12px; }
+    h3 { font-size: 18px; font-weight: 600; margin: 28px 0 8px; }
+    p  { font-size: 17px; color: var(--body-text); margin-bottom: 14px; }
+    ul, ol { font-size: 17px; color: var(--body-text); margin: 0 0 14px 22px; }
+    li { margin-bottom: 8px; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    code { background: var(--code-bg); padding: 2px 6px; border-radius: 5px; font-size: 15px;
+           font-family: "SF Mono", ui-monospace, Menlo, monospace; }
+    pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+          padding: 14px 16px; overflow-x: auto; margin: 8px 0 18px; }
+    pre code { background: none; padding: 0; font-size: 14px; }
+    .badge { display: inline-block; background: var(--code-bg); border: 1px solid var(--border);
+             border-radius: 999px; padding: 4px 12px; font-size: 14px; color: var(--text); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <a class="nav-logo" href="index.html">Servward</a>
+      <a class="nav-back" href="index.html">← Home</a>
+    </nav>
+
+    <h1>Beta Guide · Guía de la beta</h1>
+    <p class="updated">How to update your agent and check everything is healthy · Cómo actualizar el agente y comprobar que todo va bien</p>
+    <p><span class="badge">Agent version · Versión del agente: v1.7.0</span></p>
+
+    <p class="lang">English</p>
+
+    <h2>1. Get started</h2>
+    <ol>
+      <li>In the app, open the <strong>Guide</strong> tab and run the one-line install command on your server (Mac or Linux):
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code></pre>
+      </li>
+      <li>Connect the app using the <strong>token</strong> the installer prints, over <strong>Tailscale</strong> (<code>http://100.x.x.x:2586</code>) or your <strong>Cloudflare</strong> domain (<code>https://…</code>). You can also <strong>scan the QR</strong> to add a second server.</li>
+    </ol>
+
+    <h2>2. How to update your agent</h2>
+    <p>When a new app build ships, keep the server side in sync — two ways:</p>
+    <ul>
+      <li><strong>From the app (easiest, any OS):</strong> go to <strong>Settings → “Update the server agent”</strong> and tap it. It pulls the latest agent and restarts it for you — Mac <em>and</em> Linux, no terminal needed.</li>
+      <li><strong>From the server (fallback):</strong> re-run the same install command. It updates in place and keeps your token and settings:
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code></pre>
+      </li>
+    </ul>
+
+    <h2>3. How to know everything is fine ✅</h2>
+    <ul>
+      <li>The <strong>version chip</strong> (Control tab) should read <strong>v1.7.0</strong>, matching the app. If it shows an older version, <strong>pull down to refresh</strong> on the <strong>Control</strong> tab — the chip only updates while that tab is open.</li>
+      <li>The <strong>Control</strong> tab shows <strong>live CPU / RAM / disk</strong>. If the bars move, the app is talking to your server.</li>
+      <li>The <strong>Health</strong> screen gives an overall score plus per-disk <strong>SMART</strong> status (SMART needs <code>smartmontools</code> installed on the server).</li>
+      <li><strong>No red “server down” alert</strong> means the connection is healthy.</li>
+      <li>If a value looks stuck: pull to refresh on Control, or fully close and reopen the app to force a fresh poll.</li>
+    </ul>
+
+    <h2>4. Reporting</h2>
+    <p>Send any bug, odd wording, or confusing install step via TestFlight feedback.</p>
+
+    <hr />
+
+    <p class="lang">Español</p>
+
+    <h2>1. Empezar</h2>
+    <ol>
+      <li>En la app, abre la pestaña <strong>Guía</strong> y ejecuta el comando de instalación de un pie en tu servidor (Mac o Linux):
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code></pre>
+      </li>
+      <li>Conecta la app con el <strong>token</strong> que imprime el instalador, por <strong>Tailscale</strong> (<code>http://100.x.x.x:2586</code>) o tu dominio <strong>Cloudflare</strong> (<code>https://…</code>). También puedes <strong>escanear el QR</strong> para añadir un segundo servidor.</li>
+    </ol>
+
+    <h2>2. Cómo actualizar tu agente</h2>
+    <p>Cuando salga un build nuevo de la app, mantén el lado del servidor al día — dos vías:</p>
+    <ul>
+      <li><strong>Desde la app (lo más fácil, cualquier OS):</strong> ve a <strong>Ajustes → «Actualizar agente del servidor»</strong> y púlsalo. Descarga el agente más reciente y lo reinicia por ti — Mac <em>y</em> Linux, sin terminal.</li>
+      <li><strong>Desde el servidor (alternativa):</strong> vuelve a ejecutar el mismo comando de instalación. Actualiza en el sitio y conserva tu token y ajustes:
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code></pre>
+      </li>
+    </ul>
+
+    <h2>3. Cómo saber si todo está bien ✅</h2>
+    <ul>
+      <li>El <strong>chip de versión</strong> (pestaña Control) debe poner <strong>v1.7.0</strong>, igual que la app. Si muestra una versión vieja, <strong>desliza hacia abajo para refrescar</strong> en la pestaña <strong>Control</strong> — el chip solo se actualiza con esa pestaña abierta.</li>
+      <li>La pestaña <strong>Control</strong> muestra <strong>CPU / RAM / disco en vivo</strong>. Si las barras se mueven, la app está hablando con tu servidor.</li>
+      <li>La pantalla <strong>Salud</strong> da una puntuación general y el estado <strong>SMART</strong> por disco (SMART necesita <code>smartmontools</code> instalado en el servidor).</li>
+      <li><strong>Sin alerta roja de «servidor caído»</strong> = la conexión está sana.</li>
+      <li>Si un valor se queda pillado: refresca en Control, o cierra y reabre la app del todo para forzar un sondeo nuevo.</li>
+    </ul>
+
+    <h2>4. Reportar</h2>
+    <p>Envía cualquier fallo, texto raro o paso confuso de instalación por el feedback de TestFlight.</p>
+  </div>
+</body>
+</html>
