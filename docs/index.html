@@ -125,7 +125,7 @@
 
     /* ── Showcase con scroll fijado (estilo Apple) ── */
     .showcase{ padding:0 24px; }
-    .sc-track{ height:320svh; position:relative; }
+    .sc-track{ height:400svh; position:relative; }
     .sc-sticky{ position:sticky; top:0; height:100svh; display:grid; grid-template-columns:1.05fr 0.95fr; gap:48px;
       align-items:center; max-width:1020px; margin:0 auto; }
     @media (max-width:820px){
@@ -214,6 +214,14 @@
     @media (max-width:600px){ .beta-qr{ display:none; } }
 
     .oss-box{ max-width:720px; margin:0 auto; text-align:center; }
+    .duo{ display:flex; justify-content:center; gap:clamp(18px,5vw,56px); align-items:center; flex-wrap:wrap; }
+    .duo .phone{ width:min(250px,42vw); }
+    .duo .phone:first-child{ transform:rotate(-5deg) translateY(10px); }
+    .duo .phone:last-child{ transform:rotate(5deg) translateY(-6px); }
+    @media (prefers-reduced-motion: no-preference){
+      .duo .phone{ transition:transform .5s cubic-bezier(.2,.7,.3,1); }
+      .duo .phone:hover{ transform:rotate(0) translateY(-4px) scale(1.02); }
+    }
 
     footer{ border-top:1px solid var(--border); padding:36px 24px; text-align:center; font-size:0.82rem; color:var(--muted); }
     footer a{ color:var(--muted); }
@@ -293,7 +301,11 @@
             <h3>❤️ Salud del servidor</h3>
             <p>Puntuación 0-100, caducidad de certificados TLS, estado de tus endpoints y SMART de los discos. Un vistazo y sabes si todo va bien.</p>
           </div>
-          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+          <div class="sc-item">
+            <h3>⬆️ Actualizaciones del sistema</h3>
+            <p>Homebrew en Mac, apt en Linux: ve los paquetes pendientes e instálalos con un toque, sin abrir el terminal.</p>
+          </div>
+          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
         </div>
         <div class="sc-phone">
           <div class="phone">
@@ -301,6 +313,7 @@
               <img class="on" src="img/app-control-es.png" alt="Pestaña Control de Servward" loading="lazy" />
               <img src="img/app-metrics.png" alt="Métricas con histórico en Servward" loading="lazy" />
               <img src="img/app-health.png" alt="Pantalla de Salud de Servward" loading="lazy" />
+              <img src="img/app-updates.png" alt="Actualizaciones del sistema en Servward" loading="lazy" />
             </div>
           </div>
         </div>
@@ -322,6 +335,18 @@
         <div class="card reveal"><span class="card-icon">📷</span><h3>Multi-servidor + QR</h3><p>Añade todos tus servidores escaneando un QR. Cambia entre ellos al instante.</p></div>
         <div class="card reveal"><span class="card-icon">🧩</span><h3>Widget y Live Activity</h3><p>Estado en la pantalla de inicio y alertas de caída en la Isla Dinámica.</p></div>
         <div class="card reveal"><span class="card-icon">🔒</span><h3>100% privado</h3><p>La app habla directamente con tu servidor. Sin nube, sin cuentas, sin intermediarios.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <p class="section-eyebrow reveal">A tu gusto</p>
+      <h2 class="section-title reveal">Claro u oscuro.</h2>
+      <p class="section-sub reveal">Se adapta al aspecto de tu iPhone — o elige el que prefieras en Ajustes.</p>
+      <div class="duo" data-stagger>
+        <div class="phone reveal"><img src="img/app-control-light.png" alt="Servward en modo claro" loading="lazy" /></div>
+        <div class="phone reveal"><img src="img/app-control-es.png" alt="Servward en modo oscuro" loading="lazy" /></div>
       </div>
     </div>
   </section>
@@ -429,7 +454,11 @@
             <h3>❤️ Server health</h3>
             <p>0-100 score, TLS certificate expiry, endpoint status and disk SMART. One glance and you know everything is fine.</p>
           </div>
-          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+          <div class="sc-item">
+            <h3>⬆️ System updates</h3>
+            <p>Homebrew on Mac, apt on Linux: see pending packages and install them with one tap, no terminal needed.</p>
+          </div>
+          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
         </div>
         <div class="sc-phone">
           <div class="phone">
@@ -437,6 +466,7 @@
               <img class="on" src="img/app-control-en.png" alt="Servward Control tab" loading="lazy" />
               <img src="img/app-metrics.png" alt="Metrics with history in Servward" loading="lazy" />
               <img src="img/app-health.png" alt="Servward Health screen" loading="lazy" />
+              <img src="img/app-updates.png" alt="System updates in Servward" loading="lazy" />
             </div>
           </div>
         </div>
@@ -458,6 +488,18 @@
         <div class="card reveal"><span class="card-icon">📷</span><h3>Multi-server + QR</h3><p>Add all your servers by scanning a QR. Switch between them instantly.</p></div>
         <div class="card reveal"><span class="card-icon">🧩</span><h3>Widget & Live Activity</h3><p>Status on your Home Screen and down alerts in the Dynamic Island.</p></div>
         <div class="card reveal"><span class="card-icon">🔒</span><h3>100% private</h3><p>The app talks directly to your server. No cloud, no accounts, no middlemen.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-inner">
+      <p class="section-eyebrow reveal">Your way</p>
+      <h2 class="section-title reveal">Light or dark.</h2>
+      <p class="section-sub reveal">It follows your iPhone's appearance — or pick the one you prefer in Settings.</p>
+      <div class="duo" data-stagger>
+        <div class="phone reveal"><img src="img/app-control-light.png" alt="Servward in light mode" loading="lazy" /></div>
+        <div class="phone reveal"><img src="img/app-control-es.png" alt="Servward in dark mode" loading="lazy" /></div>
       </div>
     </div>
   </section>
