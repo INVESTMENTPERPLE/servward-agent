@@ -8,7 +8,9 @@
   <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="canonical" href="https://servward.espymelab.com/" />
+  <link rel="preload" as="image" href="img/hero-poster.jpg" fetchpriority="high" />
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" id="tc" content="#000000" />
   <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Servward" />
@@ -44,6 +46,7 @@
       --nav-bg:rgba(255,255,255,0.72); --code-bg:#f0f0f2; --code-text:#0071e3;
       --cmd-bg:#1d1d1f; --cmd-border:rgba(255,255,255,0.10); --cmd-text:#30d158;
       --radius:18px; --ease:cubic-bezier(.2,.7,.3,1);
+      color-scheme:light dark;
     }
     /* ── Tema oscuro ── */
     @media (prefers-color-scheme: dark){
@@ -120,6 +123,7 @@
     .phone{ position:relative; width:min(300px, 76vw); border-radius:50px; padding:11px;
       background:var(--phone-bezel); border:1px solid var(--border); box-shadow:var(--phone-shadow); will-change:transform; }
     .phone img, .phone video{ width:100%; display:block; border-radius:40px; background:#000; }
+    .hero-phone .phone video, .hero-phone .phone img{ aspect-ratio:600/1304; object-fit:cover; }
     .live-badge{ position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:2;
       display:flex; align-items:center; gap:6px; font-size:0.66rem; font-weight:600; letter-spacing:0.04em;
       color:#fff; background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); padding:5px 11px; border-radius:980px;
@@ -289,6 +293,20 @@
     ::view-transition-old(root), ::view-transition-new(root){ animation:none; mix-blend-mode:normal; }
     ::view-transition-old(root){ z-index:0; } ::view-transition-new(root){ z-index:1; }
 
+    /* ── Anillos CPU/RAM/disco (como la app) ── */
+    .rings{ padding:64px 24px; }
+    .rings-band{ display:flex; justify-content:center; gap:clamp(26px,8vw,90px); flex-wrap:wrap; }
+    .ring{ position:relative; width:132px; height:132px; }
+    .ring svg{ width:100%; height:100%; transform:rotate(-90deg); }
+    .ring circle{ fill:none; stroke-width:8; }
+    .ring circle.bg{ stroke:color-mix(in srgb, var(--text) 10%, transparent); }
+    .ring circle.fg{ stroke:var(--c); stroke-linecap:round; stroke-dasharray:327; stroke-dashoffset:327; transition:stroke-dashoffset 1.2s var(--ease); }
+    .ring.in circle.fg{ stroke-dashoffset:var(--off); }
+    @media (prefers-reduced-motion: reduce){ .ring circle.fg{ transition:none; stroke-dashoffset:var(--off); } }
+    .ring-num{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+    .ring-num b{ font-size:1.55rem; font-weight:700; letter-spacing:-0.02em; }
+    .ring-num span{ font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:2px; }
+
     /* ── Marquesina de tecnologías ── */
     .marquee{ overflow:hidden; padding:14px 0 2px;
       -webkit-mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); }
@@ -300,6 +318,9 @@
     @media (prefers-reduced-motion: reduce){ .marquee-track{ animation:none; } }
 
     /* botón magnético: la posición la mueve el JS con transform inline */
+
+    @keyframes langIn{ from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none;} }
+    @media (prefers-reduced-motion: reduce){ .lang-wrap{ animation:none !important; } }
 
     /* ── Reveal ── */
     .reveal{ opacity:0; transform:translateY(30px); transition:opacity .8s var(--ease), transform .8s var(--ease); transition-delay:var(--d,0s); }
@@ -363,6 +384,16 @@
     <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
   </div></div>
 
+
+  <section class="rings" aria-hidden="true">
+    <div class="section-inner">
+      <div class="rings-band" data-stagger>
+        <div class="ring reveal" style="--c:var(--blue);--off:252"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="23" data-suffix="%">0%</b><span>CPU</span></div></div>
+        <div class="ring reveal" style="--c:var(--purple);--off:193"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="41" data-suffix="%">0%</b><span>RAM</span></div></div>
+        <div class="ring reveal" style="--c:var(--orange);--off:124"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="62" data-suffix="%">0%</b><span>Disco</span></div></div>
+      </div>
+    </div>
+  </section>
   <section class="showcase alt">
     <div class="sc-track" data-scrub>
       <div class="sc-sticky">
@@ -510,6 +541,16 @@
     <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
   </div></div>
 
+
+  <section class="rings" aria-hidden="true">
+    <div class="section-inner">
+      <div class="rings-band" data-stagger>
+        <div class="ring reveal" style="--c:var(--blue);--off:252"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="23" data-suffix="%">0%</b><span>CPU</span></div></div>
+        <div class="ring reveal" style="--c:var(--purple);--off:193"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="41" data-suffix="%">0%</b><span>RAM</span></div></div>
+        <div class="ring reveal" style="--c:var(--orange);--off:124"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="62" data-suffix="%">0%</b><span>Disk</span></div></div>
+      </div>
+    </div>
+  </section>
   <section class="showcase alt">
     <div class="sc-track" data-scrub>
       <div class="sc-sticky">
@@ -636,7 +677,8 @@
 
   window.setLang = function(l){
     qsa('.lang-wrap').forEach(function(w){ w.classList.toggle('active', w.getAttribute('data-lang')===l); });
-    qsa('.lang-toggle button').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-set')===l); });
+    qsa('.lang-toggle button').forEach(function(b){ var on=b.getAttribute('data-set')===l; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
+    var act=document.querySelector('.lang-wrap.active'); if(act){ act.style.animation='none'; act.offsetHeight; act.style.animation='langIn .45s var(--ease)'; }
     var cta=document.querySelector('.nav-cta [data-t="cta"]');
     if(cta) cta.textContent = (l==='en'?'Join the beta':'Únete a la beta');
     document.documentElement.lang=l;
@@ -653,8 +695,8 @@
   // ── Tema: toggle manual con barrido circular (View Transitions) ──
   function resolvedTheme(){ return document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
   function updateThemeUI(th){
-    var b=document.querySelector('.theme-btn'); if(b) b.textContent = (th==='dark' ? '☀️' : '🌙');
-    var m=document.querySelector('meta[name="theme-color"]'); // el navegador ya elige por media, esto es refuerzo
+    var b=document.querySelector('.theme-btn'); if(b){ b.textContent = (th==='dark' ? '☀️' : '🌙'); b.setAttribute('aria-pressed', String(th==='dark')); }
+    var m=document.getElementById('tc'); if(m) m.setAttribute('content', th==='dark' ? '#000000' : '#ffffff');
   }
   function applyTheme(th){ document.documentElement.dataset.theme=th; try{ localStorage.setItem('sw-theme', th); }catch(e){} updateThemeUI(th); }
   window.toggleTheme=function(ev){
