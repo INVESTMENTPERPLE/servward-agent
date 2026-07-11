@@ -72,6 +72,15 @@
       box-shadow:0 40px 90px rgba(0,0,0,0.65), 0 0 0 1px rgba(0,0,0,0.6), inset 0 0 3px rgba(255,255,255,0.08);
       will-change:transform; }
     .phone img{ width:100%; display:block; border-radius:40px; background:#000; }
+    .phone video{ width:100%; display:block; border-radius:40px; background:#000; }
+    .hero-phone .phone{ position:relative; }
+    .live-badge{ position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:2;
+      display:flex; align-items:center; gap:6px; font-size:0.66rem; font-weight:600; letter-spacing:0.04em;
+      color:#fff; background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); padding:5px 11px; border-radius:980px;
+      border:1px solid rgba(255,255,255,0.14); pointer-events:none; }
+    .live-badge i{ width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); }
+    @media (prefers-reduced-motion: no-preference){ .live-badge i{ animation:pulse 1.6s ease-in-out infinite; } }
+    @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.25; } }
 
     /* ── Hero ── */
     .hero{ position:relative; overflow:clip; padding:88px 24px 40px; min-height:96svh; display:flex; flex-direction:column; justify-content:center; }
@@ -311,7 +320,13 @@
         </div>
       </div>
       <div class="hero-phone" data-tilt>
-        <div class="phone"><img src="img/app-control-es.png" alt="Servward: pestaña Control con métricas en vivo de un Mac (CPU, RAM y disco) y el agente v1.7.0 en línea" fetchpriority="high" /></div>
+        <div class="phone">
+          <span class="live-badge"><i></i>En vivo</span>
+          <video class="hero-video" autoplay muted loop playsinline preload="metadata" poster="img/hero-poster.jpg" aria-label="Grabación real de Servward recorriendo Control, Métricas y Salud">
+            <source src="img/hero.mp4" type="video/mp4" />
+            <img src="img/app-control-es.png" alt="Servward: pestaña Control con métricas en vivo" />
+          </video>
+        </div>
       </div>
     </div>
     <div class="scroll-cue" aria-hidden="true"></div>
@@ -465,7 +480,13 @@
         </div>
       </div>
       <div class="hero-phone" data-tilt>
-        <div class="phone"><img src="img/app-control-en.png" alt="Servward: Control tab with live Mac metrics (CPU, RAM, disk) and agent v1.7.0 online" fetchpriority="high" /></div>
+        <div class="phone">
+          <span class="live-badge"><i></i>Live</span>
+          <video class="hero-video" autoplay muted loop playsinline preload="metadata" poster="img/hero-en-poster.jpg" aria-label="Real recording of Servward going through Control, Metrics and Health">
+            <source src="img/hero-en.mp4" type="video/mp4" />
+            <img src="img/app-control-en.png" alt="Servward: Control tab with live Mac metrics" />
+          </video>
+        </div>
       </div>
     </div>
     <div class="scroll-cue" aria-hidden="true"></div>
@@ -617,6 +638,7 @@
 <script>
 (function(){
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduced){ Array.prototype.forEach.call(document.querySelectorAll('.hero-video'), function(v){ v.removeAttribute('autoplay'); try{ v.pause(); }catch(e){} }); }
   function qsa(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); }
 
   // ── Idioma ──
