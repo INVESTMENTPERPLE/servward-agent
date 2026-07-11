@@ -30,6 +30,7 @@
    "offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},
    "publisher":{"@type":"Organization","name":"EspymeLab"}}
   </script>
+  <script>try{var _t=localStorage.getItem('sw-theme');if(_t)document.documentElement.dataset.theme=_t;}catch(e){}</script>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     /* ── Tema claro (por defecto) ── */
@@ -56,6 +57,26 @@
         --nav-bg:rgba(0,0,0,0.72); --code-bg:#1c1c1e; --code-text:#eaeaea;
         --cmd-bg:#0c0c0c; --cmd-border:rgba(255,255,255,0.09); --cmd-text:#30d158;
       }
+    }
+    :root[data-theme="dark"]{
+      --bg:#000000; --bg-2:#08080a; --text:#f5f5f7; --muted:#86868b; --faint:#3a3a3c;
+      --border:rgba(255,255,255,0.08); --card:#0a0a0a; --card-2:#0d0d0d; --card-hover:#141414;
+      --blue:#2997ff; --green:#30d158; --purple:#bf5af2; --orange:#ff9f0a;
+      --hero-glow:rgba(41,151,255,0.18); --glow-2:rgba(191,90,242,0.08);
+      --grad-top:#ffffff; --grad-bot:rgba(255,255,255,0.66);
+      --phone-bezel:linear-gradient(160deg,#2a2a2d,#131315); --phone-shadow:0 40px 90px rgba(0,0,0,0.65);
+      --nav-bg:rgba(0,0,0,0.72); --code-bg:#1c1c1e; --code-text:#eaeaea;
+      --cmd-bg:#0c0c0c; --cmd-border:rgba(255,255,255,0.09); --cmd-text:#30d158;
+    }
+    :root[data-theme="light"]{
+      --bg:#ffffff; --bg-2:#fafafc; --text:#1d1d1f; --muted:#6e6e73; --faint:#aeaeb2;
+      --border:rgba(0,0,0,0.10); --card:#ffffff; --card-2:#f5f5f7; --card-hover:#f0f0f2;
+      --blue:#0071e3; --green:#1a9e3f; --purple:#8944ab; --orange:#c76b00;
+      --hero-glow:rgba(0,113,227,0.14); --glow-2:rgba(137,68,171,0.10);
+      --grad-top:#1d1d1f; --grad-bot:rgba(29,29,31,0.55);
+      --phone-bezel:linear-gradient(160deg,#e2e2e6,#c8c8cc); --phone-shadow:0 40px 90px rgba(0,0,0,0.22);
+      --nav-bg:rgba(255,255,255,0.72); --code-bg:#f0f0f2; --code-text:#0071e3;
+      --cmd-bg:#1d1d1f; --cmd-border:rgba(255,255,255,0.10); --cmd-text:#30d158;
     }
     html{ scroll-behavior:smooth; }
     body{ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
@@ -257,6 +278,26 @@
     .footer-inner{ max-width:1000px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; }
     .footer-links{ display:flex; gap:20px; flex-wrap:wrap; }
 
+    /* ── Toggle de tema ── */
+    .theme-btn{ font-size:0.95rem; line-height:1; background:var(--card-2); border:1px solid var(--border);
+      width:34px; height:34px; border-radius:50%; cursor:pointer; transition:transform .3s var(--ease), background .2s; padding:0; }
+    .theme-btn:hover{ transform:rotate(18deg) scale(1.08); }
+    /* View Transition: barrido circular al cambiar de tema */
+    ::view-transition-old(root), ::view-transition-new(root){ animation:none; mix-blend-mode:normal; }
+    ::view-transition-old(root){ z-index:0; } ::view-transition-new(root){ z-index:1; }
+
+    /* ── Marquesina de tecnologías ── */
+    .marquee{ overflow:hidden; padding:14px 0 2px;
+      -webkit-mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); }
+    .marquee-track{ display:flex; width:max-content; animation:scrollx 34s linear infinite; }
+    .marquee:hover .marquee-track{ animation-play-state:paused; }
+    .marquee span{ display:inline-flex; align-items:center; font-size:0.98rem; font-weight:600; color:var(--muted); white-space:nowrap; padding:0 26px; letter-spacing:-0.01em; }
+    .marquee span::after{ content:"◆"; font-size:0.5rem; color:var(--blue); margin-left:26px; opacity:.7; }
+    @keyframes scrollx{ to{ transform:translateX(-50%); } }
+    @media (prefers-reduced-motion: reduce){ .marquee-track{ animation:none; } }
+
+    /* botón magnético: la posición la mueve el JS con transform inline */
+
     /* ── Reveal ── */
     .reveal{ opacity:0; transform:translateY(30px); transition:opacity .8s var(--ease), transform .8s var(--ease); transition-delay:var(--d,0s); }
     .reveal.in{ opacity:1; transform:none; }
@@ -268,6 +309,7 @@
 <header class="nav">
   <a class="nav-logo" href="/"><span>🖥</span> Servward</a>
   <div class="nav-right">
+    <button class="theme-btn" onclick="toggleTheme(event)" aria-label="Cambiar tema claro/oscuro">🌙</button>
     <div class="lang-toggle">
       <button data-set="es" class="active" onclick="setLang('es')">ES</button>
       <button data-set="en" onclick="setLang('en')">EN</button>
@@ -307,12 +349,16 @@
 
   <div class="stats-wrap">
     <div class="stats" data-stagger>
-      <div class="stat reveal"><b style="color:var(--blue)">100%</b><span>Self-hosted</span></div>
+      <div class="stat reveal"><b style="color:var(--blue)" data-count="100" data-suffix="%">100%</b><span>Self-hosted</span></div>
       <div class="stat reveal"><b style="color:var(--green)">0</b><span>Cuentas cloud</span></div>
       <div class="stat reveal"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
       <div class="stat reveal"><b>Mac + Linux</b><span>Compatible</span></div>
-    </div>
-  </div>
+    </div>  </div>
+
+  <div class="marquee reveal" aria-hidden="true"><div class="marquee-track">
+    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
+    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
+  </div></div>
 
   <section class="showcase alt">
     <div class="sc-track" data-scrub>
@@ -447,12 +493,16 @@
 
   <div class="stats-wrap">
     <div class="stats" data-stagger>
-      <div class="stat reveal"><b style="color:var(--blue)">100%</b><span>Self-hosted</span></div>
+      <div class="stat reveal"><b style="color:var(--blue)" data-count="100" data-suffix="%">100%</b><span>Self-hosted</span></div>
       <div class="stat reveal"><b style="color:var(--green)">0</b><span>Cloud accounts</span></div>
       <div class="stat reveal"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
       <div class="stat reveal"><b>Mac + Linux</b><span>Supported</span></div>
-    </div>
-  </div>
+    </div>  </div>
+
+  <div class="marquee reveal" aria-hidden="true"><div class="marquee-track">
+    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
+    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
+  </div></div>
 
   <section class="showcase alt">
     <div class="sc-track" data-scrub>
@@ -581,7 +631,7 @@
     var cta=document.querySelector('.nav-cta [data-t="cta"]');
     if(cta) cta.textContent = (l==='en'?'Join the beta':'Únete a la beta');
     document.documentElement.lang=l;
-    setupScrub(); revealScan(); update();
+    setupScrub(); revealScan(); countScan(); update();
   };
   window.copyCmd = function(btn){
     var code=btn.parentElement.querySelector('code');
@@ -590,6 +640,42 @@
       btn.textContent=btn.getAttribute('data-done'); setTimeout(function(){ btn.textContent=orig; },1600);
     }).catch(function(){ btn.textContent='⌘C'; setTimeout(function(){ btn.textContent=orig; },1600); });
   };
+
+  // ── Tema: toggle manual con barrido circular (View Transitions) ──
+  function resolvedTheme(){ return document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
+  function updateThemeUI(th){
+    var b=document.querySelector('.theme-btn'); if(b) b.textContent = (th==='dark' ? '☀️' : '🌙');
+    var m=document.querySelector('meta[name="theme-color"]'); // el navegador ya elige por media, esto es refuerzo
+  }
+  function applyTheme(th){ document.documentElement.dataset.theme=th; try{ localStorage.setItem('sw-theme', th); }catch(e){} updateThemeUI(th); }
+  window.toggleTheme=function(ev){
+    var next = resolvedTheme()==='dark' ? 'light' : 'dark';
+    if(!document.startViewTransition || reduced){ applyTheme(next); return; }
+    var x=(ev&&ev.clientX)||window.innerWidth-40, y=(ev&&ev.clientY)||30;
+    var rmax=Math.hypot(Math.max(x, window.innerWidth-x), Math.max(y, window.innerHeight-y));
+    var vt=document.startViewTransition(function(){ applyTheme(next); });
+    vt.ready.then(function(){
+      document.documentElement.animate(
+        { clipPath:['circle(0px at '+x+'px '+y+'px)','circle('+rmax+'px at '+x+'px '+y+'px)'] },
+        { duration:560, easing:'cubic-bezier(.2,.7,.3,1)', pseudoElement:'::view-transition-new(root)' });
+    });
+  };
+  updateThemeUI(resolvedTheme());
+
+  // ── Números que cuentan al entrar en pantalla ──
+  var countObs=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(!e.isIntersecting) return;
+      var el=e.target; countObs.unobserve(el);
+      var target=parseInt(el.getAttribute('data-count'),10)||0, suf=el.getAttribute('data-suffix')||'';
+      if(reduced){ el.textContent=target+suf; return; }
+      var t0=null, dur=1200;
+      function step(ts){ if(!t0)t0=ts; var k=Math.min(1,(ts-t0)/dur); var e2=1-Math.pow(1-k,3);
+        el.textContent=Math.round(target*e2)+suf; if(k<1) requestAnimationFrame(step); }
+      requestAnimationFrame(step);
+    });
+  },{threshold:0.6});
+  function countScan(){ qsa('.lang-wrap.active [data-count]').forEach(function(el){ countObs.observe(el); }); }
 
   // ── Scrub de vídeo por scroll (solo desktop capaz). Móvil/reduced → bucle. ──
   var canScrub = !reduced && fine && window.innerWidth > 820;
@@ -659,6 +745,10 @@
       zone.addEventListener('mouseleave', function(){ ph._tilting=false; ph.style.transform='translateY('+(window.scrollY*0.10)+'px)'; });
     });
     qsa('.card').forEach(function(c){ c.addEventListener('mousemove', function(e){ var r=c.getBoundingClientRect(); c.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%'); c.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%'); }); });
+    qsa('.btn-primary').forEach(function(b){
+      b.addEventListener('mousemove', function(e){ var r=b.getBoundingClientRect(); b.style.transform='translate('+((e.clientX-r.left-r.width/2)*0.22)+'px,'+((e.clientY-r.top-r.height/2)*0.34)+'px)'; });
+      b.addEventListener('mouseleave', function(){ b.style.transform=''; });
+    });
   }
 
   var obs=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); obs.unobserve(e.target); } }); },{threshold:0.12, rootMargin:'0px 0px -6% 0px'});
@@ -669,7 +759,7 @@
 
   window.addEventListener('scroll', onScroll, {passive:true});
   window.addEventListener('resize', function(){ canScrub = !reduced && fine && window.innerWidth > 820; setupScrub(); onScroll(); }, {passive:true});
-  setupScrub(); revealScan(); update();
+  setupScrub(); revealScan(); countScan(); update();
   (function(){ var n=(navigator.language||'es').toLowerCase(); if(n.indexOf('es')!==0) window.setLang('en'); })();
 })();
 </script>
