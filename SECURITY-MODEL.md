@@ -73,6 +73,27 @@ leak, or a script you choose to run is safe. That is the operator's layer.
 
 ---
 
+## Optional hardening: bind the broker to Tailscale only
+
+By default the broker listens on `0.0.0.0:2586` (all interfaces) so it works
+over LAN, Tailscale or a local tunnel out of the box. If you only connect via
+Tailscale, you can make the broker **unreachable from the LAN entirely** by
+binding it to the machine's Tailscale IP with the `NTFY_BIND` environment
+variable (already supported):
+
+- **Linux** — edit `/etc/ntfy/ntfy.env`, add `NTFY_BIND=<your 100.x.y.z>`, then
+  `sudo systemctl restart ntfy-server`. Note: the local agent reaches the broker
+  through `NTFY_SERVER`; point it at the same Tailscale IP.
+- **macOS** — add to the `EnvironmentVariables` dict in
+  `~/Library/LaunchAgents/com.espymelab.ntfy.server.plist`:
+  `<key>NTFY_BIND</key><string>your-100.x-IP</string>`, update `NTFY_SERVER` in
+  the agent plist to match, then `ntfyctl restart`.
+
+If you use a Cloudflare Tunnel instead, `NTFY_BIND=127.0.0.1` keeps the broker
+loopback-only (the tunnel connects locally).
+
+---
+
 ## Reporting
 
 Found a weakness in the code? See [SECURITY.md](SECURITY.md). Please report it

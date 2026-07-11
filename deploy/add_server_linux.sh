@@ -154,12 +154,34 @@ CONFIG_B64=$(printf '%s' "$CONFIG_JSON" | base64 | tr -d '\n')
 URL_ENC=$(printf '%s' "$SRV_URL" | sed 's/:/%3A/g; s|/|%2F|g')
 DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}&rotoken=${TOKEN_RO}&url=${URL_ENC}"
 
+# ── Emparejamiento: QR de un solo uso SIN el token en pantalla ────────────────
+PAIR_CODE=""
+if [ -n "$SRV_URL" ]; then
+  PAIR_BODY=$(printf '{"name":"%s","url":"%s","cmd":"%s","resp":"%s","scope":"rw","ttl":900,"uses":2}' \
+    "$NAME" "$SRV_URL" "$CMD_TOPIC" "$RESP_TOPIC")
+  PAIR_CODE=$(curl -s --max-time 5 -X POST "http://127.0.0.1:$PORT/pair" \
+      -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+      -d "$PAIR_BODY" 2>/dev/null \
+    | /usr/bin/python3 -c 'import sys,json;print(json.load(sys.stdin).get("code",""))' 2>/dev/null || true)
+fi
+if [ -n "$PAIR_CODE" ]; then
+  DEEPLINK="servward://pair?url=${URL_ENC}&code=${PAIR_CODE}"
+fi
+
+
 if [ -n "$SRV_URL" ]; then
   URL_LINE="  URL        : $SRV_URL   ← Tailscale detectado ✅"
-  HINT_LINE="  (Incluye nombre, topics, token y URL: conexión en un paso.)"
 else
   URL_LINE="  URL        : según cómo lo expongas ↓"
-  HINT_LINE="  (Incluye nombre, topics y token. Solo tendrás que añadir la URL.)"
+fi
+if [ -n "$PAIR_CODE" ]; then
+  QUICK_1="  Escanea el QR de abajo con la cámara del iPhone y confirma en la app."
+  QUICK_2="  (Código de un solo uso: caduca en 15 min. El token NO aparece en pantalla.)"
+  TOKEN_LINE="  Token      : oculto por seguridad — míralo con:  ntfyctl token"
+else
+  QUICK_1="  En la app → Ajustes → «Pegar configuración» y pega este código:"
+  QUICK_2="  $CONFIG_B64"
+  TOKEN_LINE="  Token      : $TOKEN"
 fi
 
 cat <<EOF
@@ -168,17 +190,14 @@ cat <<EOF
 ✅ Servidor "$NAME" montado (broker + agente + ntfyctl).
 
 CONFIGURACIÓN RÁPIDA (recomendado):
-  En la app → Ajustes → «Pegar configuración» y pega este código:
-
-  $CONFIG_B64
-
-$HINT_LINE
+$QUICK_1
+$QUICK_2
 
 O a mano → Ajustes → Añadir servidor:
   Nombre     : $NAME
   Órdenes    : $CMD_TOPIC
   Respuestas : $RESP_TOPIC
-  Token      : $TOKEN
+$TOKEN_LINE
 $URL_LINE
 
 Exponer (elige UNO):

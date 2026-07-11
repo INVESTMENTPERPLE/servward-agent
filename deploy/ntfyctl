@@ -132,6 +132,140 @@ case "$CMD" in
       echo "Topics     : $(grep -E '^NTFY_(CMD|RESP)_TOPIC=' "$ENV_FILE" 2>/dev/null | sed 's/^/  /' | tr '\n' ' ' )"
     fi
     ;;
+  token)
+    # Muestra los tokens guardados (para configuración manual).
+    if [ "$OS" = "Darwin" ]; then
+      P="$HOME/Library/LaunchAgents/$SVC_AGENT.plist"
+      TK="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:NTFY_TOKEN' "$P" 2>/dev/null || true)"
+      RO="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:NTFY_TOKEN_RO' "$P" 2>/dev/null || true)"
+    else
+      if [ -r "$ENV_FILE" ]; then
+        TK="$(grep -E '^NTFY_TOKEN='    "$ENV_FILE" | cut -d= -f2- || true)"
+        RO="$(grep -E '^NTFY_TOKEN_RO=' "$ENV_FILE" | cut -d= -f2- || true)"
+      else
+        echo "(se necesita sudo para leer $ENV_FILE)"
+        TK="$(sudo grep -E '^NTFY_TOKEN='    "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+        RO="$(sudo grep -E '^NTFY_TOKEN_RO=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+      fi
+    fi
+    if [ -n "${TK:-}" ]; then
+      echo "Token (control)      : $TK"
+      echo "Token (solo lectura) : ${RO:-—}"
+    else
+      echo "No encontré el token. ¿Está instalado el agente en esta máquina?"
+    fi
+    ;;
+  doctor)
+    # Diagnóstico en un comando: servicios, puerto, token, Tailscale y versión.
+    FAIL=0
+    ok()  { printf '  ✅ %s\n' "$1"; }
+    bad() { printf '  ❌ %s\n' "$1"; FAIL=1; }
+    inf() { printf '  ℹ️  %s\n' "$1"; }
+    PORTD="${NTFY_PORT:-2586}"
+    echo "── Servward doctor · $PLATFORM ──"
+    # 1) servicios
+    if [ "$OS" = "Darwin" ]; then
+      for pair in "$SVC_BROKER broker" "$SVC_AGENT agente"; do
+        svc="${pair% *}"; nice="${pair#* }"
+        if launchctl print "gui/$UID_/$svc" 2>/dev/null | grep -q "state = running"; then
+          ok "$nice en ejecución"
+        else
+          bad "$nice parado  →  ntfyctl restart"
+        fi
+      done
+    else
+      for pair in "$SVC_BROKER broker" "$SVC_AGENT agente"; do
+        svc="${pair% *}"; nice="${pair#* }"
+        if systemctl is-active --quiet "$svc" 2>/dev/null; then
+          ok "$nice en ejecución"
+        else
+          bad "$nice parado  →  ntfyctl restart"
+        fi
+      done
+    fi
+    # 2) puerto del broker
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 4 "http://127.0.0.1:$PORTD/" 2>/dev/null || echo 000)"
+    if [ "$code" = "000" ]; then
+      bad "el broker no responde en 127.0.0.1:$PORTD  →  ntfyctl restart broker && ntfyctl logs broker"
+    else
+      ok "broker responde en :$PORTD"
+    fi
+    # 3) token válido (POST /pair: 401 = token mal, 400 = auth OK con cuerpo vacío)
+    TK=""
+    if [ "$OS" = "Darwin" ]; then
+      TK="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:NTFY_TOKEN' "$HOME/Library/LaunchAgents/$SVC_AGENT.plist" 2>/dev/null || true)"
+    elif [ -r "$ENV_FILE" ]; then
+      TK="$(grep -E '^NTFY_TOKEN=' "$ENV_FILE" | cut -d= -f2- || true)"
+    fi
+    if [ -n "$TK" ] && [ "$code" != "000" ]; then
+      a="$(curl -s -o /dev/null -w '%{http_code}' --max-time 4 -X POST \
+            -H "Authorization: Bearer $TK" "http://127.0.0.1:$PORTD/pair" 2>/dev/null || echo 000)"
+      case "$a" in
+        400) ok "token válido (autenticación OK)" ;;
+        401|403) bad "el token guardado NO valida contra el broker  →  ntfyctl rotate-finish o reinstala" ;;
+        *) inf "no pude verificar el token (HTTP $a)" ;;
+      esac
+    elif [ -z "$TK" ]; then
+      inf "token no legible desde aquí (en Linux prueba con sudo ntfyctl doctor)"
+    fi
+    # 4) Tailscale
+    TSD=""
+    if command -v tailscale >/dev/null 2>&1; then
+      TSD="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+    elif [ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then
+      TSD="$(/Applications/Tailscale.app/Contents/MacOS/Tailscale ip -4 2>/dev/null | head -1 || true)"
+    fi
+    if [ -z "$TSD" ] && [ "$OS" != "Darwin" ]; then
+      TSD="$(ip -4 -o addr show tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1 || true)"
+    fi
+    if [ -n "$TSD" ]; then
+      ok "Tailscale activo — URL para la app: http://$TSD:$PORTD"
+    else
+      inf "Tailscale no detectado (la app necesitará otra vía: Cloudflare o LAN)"
+    fi
+    # 5) versión del agente
+    if [ "$OS" = "Darwin" ]; then AS="$HOME/.ntfycontrol/agent.py"; else AS="$RUNTIME_DIR/agent_linux.py"; fi
+    v="$(grep -m1 '^AGENT_VERSION' "$AS" 2>/dev/null | cut -d'"' -f2 || true)"
+    if [ -n "$v" ]; then ok "agente v$v"; else inf "no pude leer la versión del agente"; fi
+    echo
+    if [ "$FAIL" = 0 ]; then echo "Todo bien ✅"; else echo "Hay problemas ❌ — el remedio está en cada línea de arriba"; fi
+    ;;
+  uninstall)
+    echo "Esto PARARÁ y ELIMINARÁ Servward de esta máquina (servicios + ntfyctl)."
+    if [ "${2:-}" != "--yes" ]; then
+      printf "¿Seguro? Escribe 'si' para continuar: "
+      read -r ans
+      [ "$ans" = "si" ] || { echo "Cancelado."; exit 1; }
+    fi
+    if [ "$OS" = "Darwin" ]; then
+      launchctl bootout "gui/$UID_/$SVC_BROKER" 2>/dev/null || true
+      launchctl bootout "gui/$UID_/$SVC_AGENT"  2>/dev/null || true
+      rm -f "$HOME/Library/LaunchAgents/$SVC_BROKER.plist" "$HOME/Library/LaunchAgents/$SVC_AGENT.plist"
+      DELDATA="n"
+      if [ "${2:-}" = "--yes" ]; then DELDATA="s"; else
+        printf "¿Borrar también el código (%s) y los logs? [s/N]: " "$HOME/.ntfycontrol"
+        read -r DELDATA
+      fi
+      if [ "$DELDATA" = "s" ] || [ "$DELDATA" = "S" ] || [ "$DELDATA" = "si" ]; then
+        rm -rf "$HOME/.ntfycontrol" "$LOG_DIR"
+      fi
+      sudo rm -f /usr/local/bin/ntfyctl 2>/dev/null || rm -f /usr/local/bin/ntfyctl 2>/dev/null || true
+    else
+      sudo systemctl disable --now "$SVC_BROKER" "$SVC_AGENT" 2>/dev/null || true
+      sudo rm -f "/etc/systemd/system/$SVC_BROKER.service" "/etc/systemd/system/$SVC_AGENT.service"
+      sudo systemctl daemon-reload
+      DELDATA="n"
+      if [ "${2:-}" = "--yes" ]; then DELDATA="s"; else
+        printf "¿Borrar también código y config (/opt/ntfy, /opt/servward-src, /etc/ntfy)? [s/N]: "
+        read -r DELDATA
+      fi
+      if [ "$DELDATA" = "s" ] || [ "$DELDATA" = "S" ] || [ "$DELDATA" = "si" ]; then
+        sudo rm -rf /opt/ntfy /opt/servward-src /etc/ntfy /etc/sudoers.d/servward-update "$HOME/.ntfycontrol"
+      fi
+      sudo rm -f /usr/local/sbin/servward-update /usr/local/bin/ntfyctl
+    fi
+    echo "Servward eliminado de esta máquina. 👋"
+    ;;
   help|*)
     cat <<EOF
 ntfyctl — gestión de Servward ($PLATFORM)
@@ -144,6 +278,9 @@ ntfyctl — gestión de Servward ($PLATFORM)
   ntfyctl start|stop [who]  arranca / para
   ntfyctl logs [who]        últimas líneas de log
   ntfyctl info              rutas, puerto, servicios y topics
+  ntfyctl doctor            diagnóstico: servicios, puerto, token, Tailscale
+  ntfyctl token             muestra los tokens guardados
+  ntfyctl uninstall [--yes] elimina Servward de esta máquina
 EOF
     ;;
 esac
