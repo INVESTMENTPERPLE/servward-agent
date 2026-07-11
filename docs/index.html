@@ -3,437 +3,235 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Servward — Controla tus servidores desde el iPhone</title>
-  <meta name="description" content="Monitoriza, controla y recibe alertas de tus servidores Mac y Linux desde el iPhone. Self-hosted, privado, sin nube. Ahora en beta." />
+  <title>Servward — Controla tus servidores Mac y Linux desde el iPhone</title>
+  <meta name="description" content="Servward monitoriza y controla tus servidores Mac y Linux desde el iPhone. Self-hosted, privado, sin nube. Open source. Ahora en beta." />
   <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="canonical" href="https://servward.espymelab.com/" />
   <link rel="preload" as="image" href="img/hero-poster.jpg" fetchpriority="high" />
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" id="tc" content="#000000" />
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" id="tc" content="#0a0a0b" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Servward" />
   <meta property="og:title" content="Servward — Controla tus servidores desde el iPhone" />
-  <meta property="og:description" content="Monitoriza, controla y recibe alertas de tus servidores Mac y Linux. Self-hosted, privado, sin nube. Ahora en beta." />
+  <meta property="og:description" content="Monitoriza y controla tus servidores Mac y Linux desde el iPhone. Self-hosted, privado, open source." />
   <meta property="og:url" content="https://servward.espymelab.com/" />
   <meta property="og:image" content="https://servward.espymelab.com/og-card.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
+  <meta property="og:image:width" content="1200" /><meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Servward — Controla tus servidores desde el iPhone" />
-  <meta name="twitter:description" content="Monitoriza, controla y recibe alertas de tus servidores Mac y Linux. Self-hosted, privado, sin nube." />
+  <meta name="twitter:description" content="Monitoriza y controla tus servidores Mac y Linux desde el iPhone. Self-hosted, privado, open source." />
   <meta name="twitter:image" content="https://servward.espymelab.com/og-card.png" />
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Servward",
-   "operatingSystem":"iOS","applicationCategory":"UtilitiesApplication",
-   "description":"Monitor and control your Mac and Linux servers from your iPhone. Self-hosted and private.",
-   "url":"https://servward.espymelab.com/","image":"https://servward.espymelab.com/og-card.png",
-   "offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},
-   "publisher":{"@type":"Organization","name":"EspymeLab"}}
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Servward","operatingSystem":"iOS","applicationCategory":"UtilitiesApplication","description":"Monitor and control your Mac and Linux servers from your iPhone. Self-hosted and private.","url":"https://servward.espymelab.com/","image":"https://servward.espymelab.com/og-card.png","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"},"publisher":{"@type":"Organization","name":"EspymeLab"}}
   </script>
   <script>try{var _t=localStorage.getItem('sw-theme');if(_t)document.documentElement.dataset.theme=_t;}catch(e){}</script>
   <style>
-    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-    /* ── Tema claro (por defecto) ── */
+    *,*::before,*::after{ box-sizing:border-box; margin:0; padding:0; }
     :root{
-      --bg:#ffffff; --bg-2:#fafafc; --text:#1d1d1f; --muted:#6e6e73; --faint:#aeaeb2;
-      --border:rgba(0,0,0,0.10); --card:#ffffff; --card-2:#f5f5f7; --card-hover:#f0f0f2;
-      --blue:#0071e3; --green:#1a9e3f; --purple:#8944ab; --orange:#c76b00;
-      --hero-glow:rgba(0,113,227,0.14); --glow-2:rgba(137,68,171,0.10);
-      --grad-top:#1d1d1f; --grad-bot:rgba(29,29,31,0.55);
-      --phone-bezel:linear-gradient(160deg,#e2e2e6,#c8c8cc); --phone-shadow:0 40px 90px rgba(0,0,0,0.22);
-      --nav-bg:rgba(255,255,255,0.72); --code-bg:#f0f0f2; --code-text:#0071e3;
-      --cmd-bg:#1d1d1f; --cmd-border:rgba(255,255,255,0.10); --cmd-text:#30d158;
-      --radius:18px; --ease:cubic-bezier(.2,.7,.3,1);
-      color-scheme:light dark;
+      --bg:#ffffff; --bg-2:#f7f7f8; --text:#0a0a0b; --muted:#5c5c66; --border:rgba(0,0,0,0.09);
+      --card:#ffffff; --card-2:#f7f7f8; --hover:#f0f0f2; --accent:#0071e3; --accent-soft:rgba(0,113,227,0.08);
+      --green:#178a3f; --shadow:0 1px 2px rgba(0,0,0,0.04), 0 8px 30px rgba(0,0,0,0.06);
+      --cmd-bg:#0d0d0f; --cmd-text:#4ade80; --r:14px; --rb:11px; --ease:cubic-bezier(.22,.61,.36,1);
+      --max:1120px; color-scheme:light dark;
     }
-    /* ── Tema oscuro ── */
     @media (prefers-color-scheme: dark){
-      :root{
-        --bg:#000000; --bg-2:#08080a; --text:#f5f5f7; --muted:#86868b; --faint:#3a3a3c;
-        --border:rgba(255,255,255,0.08); --card:#0a0a0a; --card-2:#0d0d0d; --card-hover:#141414;
-        --blue:#2997ff; --green:#30d158; --purple:#bf5af2; --orange:#ff9f0a;
-        --hero-glow:rgba(41,151,255,0.18); --glow-2:rgba(191,90,242,0.08);
-        --grad-top:#ffffff; --grad-bot:rgba(255,255,255,0.66);
-        --phone-bezel:linear-gradient(160deg,#2a2a2d,#131315); --phone-shadow:0 40px 90px rgba(0,0,0,0.65);
-        --nav-bg:rgba(0,0,0,0.72); --code-bg:#1c1c1e; --code-text:#eaeaea;
-        --cmd-bg:#0c0c0c; --cmd-border:rgba(255,255,255,0.09); --cmd-text:#30d158;
-      }
+      :root{ --bg:#0a0a0b; --bg-2:#0e0e11; --text:#f4f4f5; --muted:#9a9aa4; --border:rgba(255,255,255,0.10);
+        --card:#141416; --card-2:#111113; --hover:#1a1a1d; --accent:#2997ff; --accent-soft:rgba(41,151,255,0.10);
+        --green:#30d158; --shadow:0 1px 2px rgba(0,0,0,0.4), 0 12px 40px rgba(0,0,0,0.4); --cmd-bg:#08080a; }
     }
-    :root[data-theme="dark"]{
-      --bg:#000000; --bg-2:#08080a; --text:#f5f5f7; --muted:#86868b; --faint:#3a3a3c;
-      --border:rgba(255,255,255,0.08); --card:#0a0a0a; --card-2:#0d0d0d; --card-hover:#141414;
-      --blue:#2997ff; --green:#30d158; --purple:#bf5af2; --orange:#ff9f0a;
-      --hero-glow:rgba(41,151,255,0.18); --glow-2:rgba(191,90,242,0.08);
-      --grad-top:#ffffff; --grad-bot:rgba(255,255,255,0.66);
-      --phone-bezel:linear-gradient(160deg,#2a2a2d,#131315); --phone-shadow:0 40px 90px rgba(0,0,0,0.65);
-      --nav-bg:rgba(0,0,0,0.72); --code-bg:#1c1c1e; --code-text:#eaeaea;
-      --cmd-bg:#0c0c0c; --cmd-border:rgba(255,255,255,0.09); --cmd-text:#30d158;
-    }
-    :root[data-theme="light"]{
-      --bg:#ffffff; --bg-2:#fafafc; --text:#1d1d1f; --muted:#6e6e73; --faint:#aeaeb2;
-      --border:rgba(0,0,0,0.10); --card:#ffffff; --card-2:#f5f5f7; --card-hover:#f0f0f2;
-      --blue:#0071e3; --green:#1a9e3f; --purple:#8944ab; --orange:#c76b00;
-      --hero-glow:rgba(0,113,227,0.14); --glow-2:rgba(137,68,171,0.10);
-      --grad-top:#1d1d1f; --grad-bot:rgba(29,29,31,0.55);
-      --phone-bezel:linear-gradient(160deg,#e2e2e6,#c8c8cc); --phone-shadow:0 40px 90px rgba(0,0,0,0.22);
-      --nav-bg:rgba(255,255,255,0.72); --code-bg:#f0f0f2; --code-text:#0071e3;
-      --cmd-bg:#1d1d1f; --cmd-border:rgba(255,255,255,0.10); --cmd-text:#30d158;
-    }
+    :root[data-theme="light"]{ --bg:#ffffff; --bg-2:#f7f7f8; --text:#0a0a0b; --muted:#5c5c66; --border:rgba(0,0,0,0.09); --card:#ffffff; --card-2:#f7f7f8; --hover:#f0f0f2; --accent:#0071e3; --accent-soft:rgba(0,113,227,0.08); --green:#178a3f; --shadow:0 1px 2px rgba(0,0,0,0.04),0 8px 30px rgba(0,0,0,0.06); --cmd-bg:#0d0d0f; }
+    :root[data-theme="dark"]{ --bg:#0a0a0b; --bg-2:#0e0e11; --text:#f4f4f5; --muted:#9a9aa4; --border:rgba(255,255,255,0.10); --card:#141416; --card-2:#111113; --hover:#1a1a1d; --accent:#2997ff; --accent-soft:rgba(41,151,255,0.10); --green:#30d158; --shadow:0 1px 2px rgba(0,0,0,0.4),0 12px 40px rgba(0,0,0,0.4); --cmd-bg:#08080a; }
+
     html{ scroll-behavior:smooth; }
-    body{ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
-      background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; overflow-x:hidden;
-      transition:background .4s ease, color .4s ease; }
-    a{ color:var(--blue); text-decoration:none; }
-    img{ max-width:100%; }
-    ::selection{ background:color-mix(in srgb, var(--blue) 32%, transparent); }
-    :focus-visible{ outline:2px solid var(--blue); outline-offset:3px; border-radius:6px; }
+    body{ font-family:-apple-system,BlinkMacSystemFont,"Inter","SF Pro Text","Segoe UI",sans-serif; background:var(--bg); color:var(--text);
+      -webkit-font-smoothing:antialiased; line-height:1.55; letter-spacing:-0.011em; overflow-x:hidden; }
+    a{ color:inherit; text-decoration:none; }
+    img,video{ max-width:100%; display:block; }
+    ::selection{ background:color-mix(in srgb, var(--accent) 26%, transparent); }
+    :focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+    .wrap{ max-width:var(--max); margin:0 auto; padding:0 24px; }
 
-    /* ── Nav ── */
-    .nav{ position:sticky; top:0; z-index:40; display:flex; align-items:center; justify-content:space-between;
-      padding:15px 24px; background:var(--nav-bg); backdrop-filter:blur(22px); -webkit-backdrop-filter:blur(22px);
-      border-bottom:1px solid var(--border); transition:padding .35s var(--ease); }
-    .nav.scrolled{ padding:9px 24px; }
-    .nav-logo{ font-size:1.1rem; font-weight:650; color:var(--text); display:flex; align-items:center; gap:8px; letter-spacing:-0.01em; }
-    .nav-right{ display:flex; align-items:center; gap:12px; }
-    .lang-toggle{ display:flex; gap:3px; background:var(--card-2); border:1px solid var(--border); border-radius:980px; padding:3px; }
-    .lang-toggle button{ font:inherit; font-size:0.74rem; font-weight:600; color:var(--muted); background:transparent; border:none;
-      padding:6px 13px; border-radius:980px; cursor:pointer; transition:.2s; }
-    .lang-toggle button.active{ background:var(--blue); color:#fff; }
-    .nav-cta{ display:inline-flex; align-items:center; gap:6px; background:var(--blue); color:#fff; font-size:0.82rem; font-weight:600;
-      padding:8px 16px; border-radius:980px; transition:.2s; box-shadow:0 3px 14px color-mix(in srgb, var(--blue) 35%, transparent); }
-    .nav-cta:hover{ opacity:.9; transform:translateY(-1px); }
-    @media (max-width:560px){ .nav-cta span.long{ display:none; } }
-    .nav-progress{ position:absolute; left:0; bottom:-1px; width:100%; height:2px; }
-    .nav-progress i{ display:block; height:100%; width:0; background:linear-gradient(90deg,var(--blue),var(--purple)); }
+    /* Nav */
+    .nav{ position:sticky; top:0; z-index:50; background:color-mix(in srgb, var(--bg) 80%, transparent); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid var(--border); }
+    .nav-in{ max-width:var(--max); margin:0 auto; padding:0 24px; height:60px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+    .brand{ font-weight:640; font-size:1.05rem; display:flex; align-items:center; gap:8px; letter-spacing:-0.02em; }
+    .brand span{ font-size:1.15rem; }
+    .nav-links{ display:flex; gap:28px; margin-left:8px; margin-right:auto; }
+    .nav-links a{ font-size:0.9rem; color:var(--muted); font-weight:500; transition:color .15s; }
+    .nav-links a:hover{ color:var(--text); }
+    .nav-right{ display:flex; align-items:center; gap:10px; }
+    .icon-btn{ width:34px; height:34px; border-radius:9px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:0.95rem; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:background .15s; }
+    .icon-btn:hover{ background:var(--hover); }
+    .lang{ display:flex; border:1px solid var(--border); border-radius:9px; overflow:hidden; }
+    .lang button{ font:inherit; font-size:0.78rem; font-weight:600; color:var(--muted); background:transparent; border:none; padding:6px 11px; cursor:pointer; }
+    .lang button.active{ background:var(--text); color:var(--bg); }
+    .btn{ display:inline-flex; align-items:center; gap:7px; font-weight:600; font-size:0.9rem; padding:9px 17px; border-radius:var(--rb); transition:opacity .15s, transform .15s, background .15s; white-space:nowrap; cursor:pointer; border:1px solid transparent; }
+    .btn-primary{ background:var(--accent); color:#fff; }
+    .btn-primary:hover{ opacity:.9; }
+    .btn-ghost{ background:transparent; border-color:var(--border); color:var(--text); }
+    .btn-ghost:hover{ background:var(--hover); }
+    .btn-lg{ padding:13px 24px; font-size:0.98rem; }
+    @media (max-width:860px){ .nav-links{ display:none; } }
+    @media (max-width:520px){ .nav-cta-text{ display:none; } }
 
-    .lang-wrap{ display:none; }
-    .lang-wrap.active{ display:block; }
+    .lang-wrap{ display:none; } .lang-wrap.active{ display:block; }
 
-    /* ── Botones ── */
-    .btn{ display:inline-flex; align-items:center; gap:8px; padding:14px 28px; border-radius:980px; font-size:0.95rem; font-weight:600;
-      transition:opacity .2s, transform .2s; letter-spacing:-0.01em; cursor:pointer; }
-    .btn:hover{ opacity:.9; transform:translateY(-1px); }
-    .btn-primary{ background:var(--blue); color:#fff; box-shadow:0 6px 24px color-mix(in srgb, var(--blue) 42%, transparent); }
-    .btn-secondary{ background:color-mix(in srgb, var(--text) 8%, transparent); color:var(--text); border:1px solid var(--border); }
-    .btn-lg{ padding:17px 36px; font-size:1.05rem; }
+    /* Hero */
+    .hero{ text-align:center; padding:88px 0 0; position:relative; }
+    .hero::before{ content:""; position:absolute; top:0; left:50%; transform:translateX(-50%); width:900px; max-width:120vw; height:520px;
+      background:radial-gradient(ellipse at 50% 0%, var(--accent-soft), transparent 70%); pointer-events:none; z-index:-1; }
+    .pill{ display:inline-flex; align-items:center; gap:8px; font-size:0.8rem; font-weight:600; color:var(--muted); border:1px solid var(--border); background:var(--card-2); padding:6px 14px; border-radius:980px; margin-bottom:26px; }
+    .pill b{ color:var(--accent); font-weight:600; }
+    h1{ font-size:clamp(2.5rem,5.6vw,4rem); font-weight:680; letter-spacing:-0.035em; line-height:1.06; max-width:15ch; margin:0 auto 22px; text-wrap:balance; }
+    .lead{ font-size:clamp(1.08rem,2vw,1.3rem); color:var(--muted); max-width:52ch; margin:0 auto 32px; line-height:1.5; text-wrap:pretty; }
+    .hero-cta{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-bottom:16px; }
+    .microcopy{ font-size:0.82rem; color:var(--muted); }
+    /* Hero shot */
+    .hero-shot{ margin:56px auto 0; max-width:960px; position:relative; }
+    .browser{ border:1px solid var(--border); border-radius:16px; background:var(--card); box-shadow:var(--shadow); overflow:hidden; }
+    .browser-bar{ height:38px; display:flex; align-items:center; gap:7px; padding:0 14px; border-bottom:1px solid var(--border); background:var(--card-2); }
+    .browser-bar i{ width:11px; height:11px; border-radius:50%; background:var(--border); }
+    .hero-stage{ display:flex; justify-content:center; padding:40px 24px 0; background:linear-gradient(180deg, var(--bg-2), var(--card)); }
+    .hero-stage .device{ width:min(290px,72vw); border-radius:38px; padding:9px; background:var(--text); box-shadow:0 20px 50px rgba(0,0,0,0.25); }
+    .hero-stage .device video, .hero-stage .device img{ border-radius:30px; aspect-ratio:600/1304; object-fit:cover; background:#000; }
+    .device-badge{ position:absolute; }
 
-    /* ── iPhone ── */
-    .phone{ position:relative; width:min(300px, 76vw); border-radius:50px; padding:11px;
-      background:var(--phone-bezel); border:1px solid var(--border); box-shadow:var(--phone-shadow); will-change:transform; }
-    .phone img, .phone video{ width:100%; display:block; border-radius:40px; background:#000; }
-    .hero-phone .phone video, .hero-phone .phone img{ aspect-ratio:600/1304; object-fit:cover; }
-    .live-badge{ position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:2;
-      display:flex; align-items:center; gap:6px; font-size:0.66rem; font-weight:600; letter-spacing:0.04em;
-      color:#fff; background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); padding:5px 11px; border-radius:980px;
-      border:1px solid rgba(255,255,255,0.14); pointer-events:none; }
-    .live-badge i{ width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); }
-    @media (prefers-reduced-motion: no-preference){ .live-badge i{ animation:pulse 1.6s ease-in-out infinite; } }
-    @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:0.25; } }
+    /* Trust strip */
+    .trust{ padding:44px 0; border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin-top:80px; }
+    .trust p{ text-align:center; font-size:0.72rem; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); margin-bottom:22px; font-weight:600; }
+    .trust-row{ display:flex; flex-wrap:wrap; justify-content:center; gap:14px 40px; }
+    .trust-row span{ font-size:0.98rem; font-weight:600; color:var(--muted); }
 
-    /* ── Hero ── */
-    .hero{ position:relative; overflow:clip; padding:88px 24px 40px; min-height:96svh; display:flex; flex-direction:column; justify-content:center; }
-    .hero-bg{ position:absolute; top:-25%; left:60%; transform:translateX(-50%); width:min(1000px,150vw); height:min(1000px,150vw);
-      background:radial-gradient(ellipse at 50% 30%, var(--hero-glow) 0%, var(--glow-2) 38%, transparent 68%); pointer-events:none; will-change:transform; }
-    .hero-inner{ position:relative; max-width:1080px; margin:0 auto; display:grid; grid-template-columns:1.1fr 0.9fr; gap:56px; align-items:center; width:100%; }
-    @media (max-width:900px){ .hero-inner{ grid-template-columns:1fr; gap:44px; text-align:center; } }
-    .eyebrow{ display:inline-flex; align-items:center; gap:8px; font-size:0.78rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;
-      color:var(--blue); margin-bottom:20px; background:color-mix(in srgb, var(--blue) 10%, transparent);
-      border:1px solid color-mix(in srgb, var(--blue) 26%, transparent); padding:6px 14px; border-radius:980px; }
-    .hero h1{ font-size:clamp(2.9rem,7vw,5rem); font-weight:700; letter-spacing:-0.04em; line-height:1.02; margin-bottom:24px; text-wrap:balance; }
-    .hero h1 .w{ display:inline-block; }
-    @media (prefers-reduced-motion: no-preference){
-      .hero h1 .w{ opacity:0; transform:translateY(38px); animation:wordUp .8s var(--ease) both; animation-delay:calc(.15s + var(--i)*0.08s); }
-    }
-    @keyframes wordUp{ to{ opacity:1; transform:none; } }
-    .hero h1 .grad{ background:linear-gradient(96deg,var(--blue),var(--purple)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-    .hero .tagline{ font-size:clamp(1.1rem,2.3vw,1.35rem); color:var(--muted); line-height:1.55; margin-bottom:36px; max-width:520px; text-wrap:pretty; }
-    @media (max-width:900px){ .hero .tagline{ margin-left:auto; margin-right:auto; } }
-    .hero-ctas{ display:flex; gap:14px; flex-wrap:wrap; }
-    @media (max-width:900px){ .hero-ctas{ justify-content:center; } }
-    .hero-copy > *{ will-change:transform, opacity; }
-    @media (prefers-reduced-motion: no-preference){
-      .hero-copy .eyebrow,.hero-copy .tagline,.hero-copy .hero-ctas{ opacity:0; transform:translateY(26px); animation:fadeUp .8s var(--ease) both; }
-      .hero-copy .eyebrow{ animation-delay:.05s } .hero-copy .tagline{ animation-delay:.5s } .hero-copy .hero-ctas{ animation-delay:.62s }
-      .hero-phone{ animation:fadeUp 1s .3s var(--ease) both; }
-    }
-    @keyframes fadeUp{ from{ opacity:0; transform:translateY(26px);} to{ opacity:1; transform:none;} }
-    .hero-phone{ display:flex; justify-content:center; position:relative; perspective:1000px; }
-    .hero-phone::before{ content:""; position:absolute; inset:-12% -8%; border-radius:50%;
-      background:radial-gradient(circle at 55% 40%, var(--hero-glow), transparent 65%); pointer-events:none; }
-    .scroll-cue{ position:relative; margin:52px auto 0; width:26px; height:42px; border:2px solid color-mix(in srgb, var(--text) 25%, transparent); border-radius:14px; flex-shrink:0; transition:opacity .4s; }
-    .scroll-cue::after{ content:""; position:absolute; left:50%; top:8px; width:4px; height:8px; margin-left:-2px; border-radius:2px; background:var(--blue); animation:cue 1.8s ease-in-out infinite; }
-    @keyframes cue{ 0%,100%{ transform:translateY(0); opacity:1;} 55%{ transform:translateY(14px); opacity:0.2;} }
+    /* Sections */
+    section{ padding:96px 0; }
+    .sec-head{ max-width:640px; margin:0 auto 60px; text-align:center; }
+    .kicker{ font-size:0.8rem; font-weight:600; color:var(--accent); letter-spacing:0.02em; margin-bottom:12px; }
+    h2{ font-size:clamp(1.8rem,3.6vw,2.6rem); font-weight:660; letter-spacing:-0.03em; line-height:1.12; margin-bottom:14px; text-wrap:balance; }
+    .sec-head p{ color:var(--muted); font-size:1.08rem; text-wrap:pretty; }
 
-    /* ── Stats ── */
-    .stats-wrap{ padding:0 24px 48px; }
-    .stats{ max-width:1000px; margin:0 auto; display:flex; flex-wrap:wrap; border:1px solid var(--border); border-radius:16px; background:var(--card-2); overflow:hidden; }
-    .stat{ flex:1; min-width:150px; padding:22px 20px; text-align:center; border-right:1px solid var(--border); }
-    .stat:last-child{ border-right:none; }
-    .stat b{ font-size:1.4rem; font-weight:700; display:block; margin-bottom:4px; letter-spacing:-0.02em; }
-    .stat span{ font-size:0.76rem; color:var(--muted); }
+    /* Feature grid */
+    .features{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; }
+    @media (max-width:860px){ .features{ grid-template-columns:repeat(2,1fr); } }
+    @media (max-width:560px){ .features{ grid-template-columns:1fr; } }
+    .feat{ border:1px solid var(--border); border-radius:var(--r); padding:26px 24px; background:var(--card); transition:border-color .2s, transform .2s; }
+    .feat:hover{ border-color:color-mix(in srgb, var(--accent) 40%, var(--border)); transform:translateY(-2px); }
+    .feat .ic{ width:40px; height:40px; border-radius:10px; background:var(--accent-soft); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:1.2rem; margin-bottom:16px; }
+    .feat h3{ font-size:1.05rem; font-weight:620; margin-bottom:7px; letter-spacing:-0.01em; }
+    .feat p{ color:var(--muted); font-size:0.92rem; line-height:1.55; }
+    .feat .badge{ font-size:0.6rem; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#fff; background:var(--green); padding:2px 6px; border-radius:5px; margin-left:6px; vertical-align:middle; }
 
-    /* ── Secciones ── */
-    section{ padding:100px 24px; position:relative; }
-    section.alt{ background:var(--bg-2); }
-    .section-inner{ max-width:1060px; margin:0 auto; }
-    .section-eyebrow{ font-size:0.76rem; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--blue); text-align:center; margin-bottom:12px; }
-    .section-title{ font-size:clamp(2rem,4.8vw,3.2rem); font-weight:700; letter-spacing:-0.03em; text-align:center; margin-bottom:16px; line-height:1.1; text-wrap:balance; }
-    .section-sub{ text-align:center; color:var(--muted); max-width:600px; margin:0 auto 60px; line-height:1.6; font-size:1.05rem; text-wrap:pretty; }
+    /* Product tour (rows) */
+    .tour{ background:var(--bg-2); }
+    .row{ display:grid; grid-template-columns:1fr 1fr; gap:56px; align-items:center; max-width:980px; margin:0 auto; padding:44px 0; }
+    .row + .row{ border-top:1px solid var(--border); }
+    @media (max-width:820px){ .row{ grid-template-columns:1fr; gap:28px; padding:38px 0; } .row .shot{ order:-1; } }
+    .row.rev .txt{ order:2; } @media (max-width:820px){ .row.rev .txt{ order:0; } }
+    .row .txt h3{ font-size:1.5rem; font-weight:640; letter-spacing:-0.02em; margin-bottom:12px; }
+    .row .txt p{ color:var(--muted); font-size:1rem; margin-bottom:16px; }
+    .row .txt ul{ list-style:none; display:flex; flex-direction:column; gap:9px; }
+    .row .txt li{ display:flex; gap:10px; font-size:0.94rem; color:var(--text); }
+    .row .txt li::before{ content:"✓"; color:var(--accent); font-weight:700; }
+    .row .shot{ display:flex; justify-content:center; }
+    .row .shot .device{ width:min(232px,64vw); border-radius:34px; padding:8px; background:var(--text); box-shadow:var(--shadow); }
+    .row .shot .device img{ border-radius:27px; }
 
-    /* ── Showcase con SCRUB de vídeo por scroll ── */
-    .showcase{ padding:0 24px; }
-    .sc-track{ height:360svh; position:relative; }
-    .sc-sticky{ position:sticky; top:0; height:100svh; display:grid; grid-template-columns:1.05fr 0.95fr; gap:48px; align-items:center; max-width:1020px; margin:0 auto; }
-    @media (max-width:820px){ .sc-sticky{ grid-template-columns:1fr; gap:12px; padding-top:64px; align-content:center; } .sc-phone .phone{ width:min(220px,56vw); margin:0 auto; } }
-    .sc-head{ position:absolute; top:6svh; left:0; right:0; text-align:center; }
-    .sc-copy{ position:relative; min-height:230px; }
-    .sc-item{ position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; opacity:0; transform:translateY(26px); transition:opacity .45s var(--ease), transform .45s var(--ease); pointer-events:none; }
-    .sc-item.on{ opacity:1; transform:none; pointer-events:auto; }
-    .sc-item h3{ font-size:clamp(1.6rem,3.6vw,2.4rem); font-weight:700; letter-spacing:-0.02em; margin-bottom:14px; }
-    .sc-item p{ color:var(--muted); font-size:1.05rem; line-height:1.7; max-width:410px; }
-    @media (max-width:820px){ .sc-item{ text-align:center; align-items:center; } .sc-copy{ min-height:180px; } }
-    .sc-dots{ position:absolute; left:0; bottom:-6px; display:flex; gap:8px; }
-    @media (max-width:820px){ .sc-dots{ left:50%; transform:translateX(-50%); } }
-    .sc-dots i{ width:28px; height:4px; border-radius:2px; background:color-mix(in srgb, var(--text) 14%, transparent); transition:background .3s; }
-    .sc-dots i.on{ background:var(--blue); }
-    .sc-phone{ display:flex; justify-content:center; position:relative; }
-    .sc-phone::before{ content:""; position:absolute; inset:-12% -10%; border-radius:50%; background:radial-gradient(circle at 50% 45%, var(--glow-2), transparent 60%); pointer-events:none; }
-    .sc-phone .shots{ position:relative; width:100%; border-radius:40px; overflow:hidden; aspect-ratio:1206/2622; background:#000; }
-    .sc-phone .shots img{ position:absolute; inset:0; width:100%; opacity:0; transition:opacity .5s var(--ease); }
-    .sc-phone .shots img.on{ opacity:1; }
-    /* modo estático (móvil / reduced-motion): sin pin, vídeo en bucle, textos apilados */
-    .sc-track.sc-static{ height:auto; }
-    .sc-track.sc-static .sc-sticky{ position:static; height:auto; padding:60px 0; }
-    .sc-track.sc-static .sc-head{ position:static; margin-bottom:34px; }
-    .sc-track.sc-static .sc-copy{ min-height:0; }
-    .sc-track.sc-static .sc-item{ position:static; opacity:1; transform:none; margin-bottom:26px; }
-    .sc-track.sc-static .sc-dots{ display:none; }
-    @media (prefers-reduced-motion: reduce){ .scroll-cue{ display:none; } }
+    /* Security */
+    .sec-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:18px; }
+    @media (max-width:820px){ .sec-grid{ grid-template-columns:repeat(2,1fr); } }
+    @media (max-width:460px){ .sec-grid{ grid-template-columns:1fr; } }
+    .sc{ border:1px solid var(--border); border-radius:var(--r); padding:22px 20px; background:var(--card); }
+    .sc .ic{ font-size:1.3rem; margin-bottom:12px; }
+    .sc h4{ font-size:0.98rem; font-weight:620; margin-bottom:6px; }
+    .sc p{ font-size:0.86rem; color:var(--muted); line-height:1.5; }
 
-    /* ── Móvil: showcase sin fijar (scroll natural) ── */
-    @media (max-width:820px){
-      .sc-track{ height:auto; }
-      .sc-sticky{ position:static; height:auto; padding:44px 0 8px; }
-      .sc-head{ position:static; margin-bottom:24px; }
-      .sc-copy{ min-height:0; margin-bottom:6px; }
-      .sc-item{ position:static; opacity:1; transform:none; margin-bottom:18px; }
-      .sc-dots{ display:none; }
-      .sc-phone .phone{ margin-top:8px; }
-    }
-    @media (max-width:480px){
-      .rings{ padding:48px 20px; }
-      .rings-band{ gap:14px; }
-      .ring{ width:96px; height:96px; }
-      .ring circle{ stroke-width:9; }
-      .ring-num b{ font-size:1.15rem; }
-      .ring-num span{ font-size:0.6rem; }
-    }
-
-    /* ── Grid de funciones ── */
-    .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
-    .card{ background:var(--card); padding:30px 26px; transition:background .2s; position:relative; overflow:hidden; }
-    section.alt .card{ background:var(--card-2); }
-    .card:hover{ background:var(--card-hover); }
-    .card.hl{ background:linear-gradient(165deg, color-mix(in srgb, var(--blue) 12%, var(--card)), var(--card) 62%); }
-    .card::after{ content:""; position:absolute; inset:0; opacity:0; transition:opacity .35s; pointer-events:none;
-      background:radial-gradient(220px circle at var(--mx,50%) var(--my,50%), color-mix(in srgb, var(--blue) 14%, transparent), transparent 70%); }
-    .card:hover::after{ opacity:1; }
-    .card-icon{ font-size:1.9rem; margin-bottom:14px; display:block; }
-    .card h3{ font-size:1.02rem; font-weight:650; margin-bottom:8px; letter-spacing:-0.01em; }
-    .card p{ font-size:0.88rem; color:var(--muted); line-height:1.6; }
-    .tag{ display:inline-block; font-size:0.58rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#fff; background:var(--green); padding:2px 7px; border-radius:980px; margin-left:7px; vertical-align:middle; }
-
-    /* ── Claro/oscuro dúo ── */
-    .duo{ display:flex; justify-content:center; gap:clamp(18px,5vw,56px); align-items:center; flex-wrap:wrap; }
-    .duo .phone{ width:min(250px,42vw); }
-    .duo .phone:first-child{ transform:rotate(-5deg) translateY(10px); }
-    .duo .phone:last-child{ transform:rotate(5deg) translateY(-6px); }
-    @media (prefers-reduced-motion: no-preference){ .duo .phone{ transition:transform .5s var(--ease); } .duo .phone:hover{ transform:rotate(0) translateY(-4px) scale(1.02); } }
-
-    /* ── Pasos ── */
-    .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
-    @media (max-width:820px){ .steps{ grid-template-columns:1fr; } }
-    .stp{ background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius); padding:28px 26px; }
-    .stp-n{ width:32px; height:32px; border-radius:50%; background:var(--blue); color:#fff; font-weight:700; font-size:0.9rem; display:flex; align-items:center; justify-content:center; margin-bottom:16px; }
-    .stp h3{ font-size:1.05rem; margin-bottom:8px; }
-    .stp p{ font-size:0.88rem; color:var(--muted); line-height:1.6; }
-    .cmd{ position:relative; background:var(--cmd-bg); border:1px solid var(--cmd-border); border-radius:14px; padding:18px 92px 18px 20px; overflow-x:auto; max-width:760px; margin:36px auto 0; }
+    /* Steps */
+    .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; max-width:900px; margin:0 auto 40px; }
+    @media (max-width:760px){ .steps{ grid-template-columns:1fr; } }
+    .step{ padding:4px; }
+    .step .n{ font-size:0.85rem; font-weight:700; color:var(--accent); margin-bottom:10px; }
+    .step h4{ font-size:1.08rem; font-weight:620; margin-bottom:7px; }
+    .step p{ color:var(--muted); font-size:0.93rem; }
+    .cmd{ position:relative; background:var(--cmd-bg); border:1px solid var(--border); border-radius:12px; padding:16px 92px 16px 18px; overflow-x:auto; max-width:760px; margin:0 auto; }
     .cmd code{ font-family:"SF Mono","JetBrains Mono",monospace; font-size:0.8rem; color:var(--cmd-text); white-space:pre; }
-    .copy-btn{ position:absolute; top:11px; right:11px; font:inherit; font-size:0.7rem; font-weight:600; color:#aeaeb2; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:6px 11px; cursor:pointer; transition:.2s; }
-    .copy-btn:hover{ color:#fff; background:rgba(255,255,255,0.16); }
+    .copy{ position:absolute; top:10px; right:10px; font:inherit; font-size:0.72rem; font-weight:600; color:#c9c9cf; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.14); border-radius:8px; padding:6px 10px; cursor:pointer; }
+    .copy:hover{ background:rgba(255,255,255,0.16); color:#fff; }
 
-    /* ── FAQ ── */
-    .faq{ max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
-    .faq details{ background:var(--card-2); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
-    .faq summary{ list-style:none; cursor:pointer; padding:18px 22px; font-weight:600; font-size:0.97rem; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    /* FAQ */
+    .faq{ max-width:760px; margin:0 auto; }
+    .faq details{ border-bottom:1px solid var(--border); }
+    .faq summary{ list-style:none; cursor:pointer; padding:20px 4px; font-weight:600; font-size:1rem; display:flex; justify-content:space-between; gap:14px; align-items:center; }
     .faq summary::-webkit-details-marker{ display:none; }
-    .faq summary::after{ content:"+"; color:var(--muted); font-size:1.25rem; transition:transform .25s; flex-shrink:0; }
-    .faq details[open] summary::after{ transform:rotate(45deg); }
-    .faq .a{ padding:0 22px 18px; color:var(--muted); font-size:0.9rem; line-height:1.65; }
-    .faq code{ background:var(--code-bg); padding:2px 7px; border-radius:6px; font-family:"SF Mono",monospace; font-size:0.82em; color:var(--code-text); }
+    .faq summary::after{ content:"+"; color:var(--muted); font-size:1.3rem; font-weight:400; }
+    .faq details[open] summary::after{ content:"−"; }
+    .faq .a{ padding:0 4px 20px; color:var(--muted); font-size:0.95rem; line-height:1.6; }
+    .faq code{ font-family:"SF Mono",monospace; font-size:0.85em; background:var(--card-2); padding:2px 6px; border-radius:5px; }
 
-    /* ── Beta box ── */
-    .beta-box{ max-width:760px; margin:0 auto; text-align:center; background:linear-gradient(165deg, color-mix(in srgb, var(--blue) 12%, var(--card)), color-mix(in srgb, var(--purple) 8%, var(--card))); border:1px solid color-mix(in srgb, var(--blue) 28%, transparent); border-radius:26px; padding:56px 32px; position:relative; overflow:hidden; }
-    .beta-box::before{ content:""; position:absolute; top:-60%; left:-20%; width:70%; height:160%; pointer-events:none; background:radial-gradient(circle, var(--hero-glow), transparent 60%); }
-    @media (prefers-reduced-motion: no-preference){ .beta-box::before{ animation:aurora 11s ease-in-out infinite alternate; } @keyframes aurora{ from{ transform:translate(0,0) scale(1);} to{ transform:translate(60%,18%) scale(1.25);} } }
-    .beta-box h2{ font-size:clamp(1.7rem,4vw,2.4rem); font-weight:700; letter-spacing:-0.025em; margin-bottom:14px; position:relative; }
-    .beta-box p{ color:var(--muted); font-size:1.02rem; line-height:1.6; max-width:520px; margin:0 auto 30px; position:relative; }
-    .beta-ctas{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; position:relative; }
-    .beta-qr{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-top:30px; position:relative; }
-    .beta-qr img{ width:150px; height:150px; border-radius:16px; background:#fff; box-shadow:0 10px 34px rgba(0,0,0,0.30); }
-    .beta-qr span{ font-size:0.78rem; color:var(--muted); }
-    @media (max-width:600px){ .beta-qr{ display:none; } }
+    /* CTA */
+    .cta{ text-align:center; }
+    .cta-card{ max-width:840px; margin:0 auto; border:1px solid var(--border); border-radius:22px; padding:64px 32px; background:var(--card); position:relative; overflow:hidden; }
+    .cta-card::before{ content:""; position:absolute; inset:0; background:radial-gradient(ellipse at 50% -20%, var(--accent-soft), transparent 60%); pointer-events:none; }
+    .cta-card h2{ margin-bottom:14px; } .cta-card p{ color:var(--muted); max-width:44ch; margin:0 auto 30px; font-size:1.05rem; }
+    .cta-actions{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; position:relative; }
+    .qr{ margin-top:34px; display:flex; flex-direction:column; align-items:center; gap:9px; position:relative; }
+    .qr img{ width:132px; height:132px; border-radius:12px; background:#fff; padding:6px; border:1px solid var(--border); }
+    .qr span{ font-size:0.78rem; color:var(--muted); }
+    @media (max-width:560px){ .qr{ display:none; } }
 
-    .oss-box{ max-width:720px; margin:0 auto; text-align:center; }
+    /* Footer */
+    footer{ border-top:1px solid var(--border); background:var(--bg-2); padding:56px 0 40px; }
+    .foot{ display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:40px; }
+    @media (max-width:760px){ .foot{ grid-template-columns:1fr 1fr; gap:32px; } }
+    .foot h5{ font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted); margin-bottom:14px; font-weight:600; }
+    .foot a{ display:block; font-size:0.92rem; color:var(--muted); padding:5px 0; transition:color .15s; }
+    .foot a:hover{ color:var(--text); }
+    .foot-brand p{ color:var(--muted); font-size:0.9rem; max-width:30ch; margin-top:12px; }
+    .foot-bottom{ margin-top:44px; padding-top:24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; font-size:0.85rem; color:var(--muted); }
 
-    /* ── Cierre a pantalla completa ── */
-    .closer{ min-height:92svh; display:flex; align-items:center; justify-content:center; text-align:center; overflow:clip; position:relative; }
-    .closer::before{ content:""; position:absolute; inset:0; pointer-events:none;
-      background:radial-gradient(ellipse at 50% 42%, var(--hero-glow), transparent 62%); }
-    .closer-inner{ position:relative; max-width:640px; padding:0 24px; }
-    .closer-icon{ width:92px; height:92px; margin:0 auto 30px; border-radius:23%; overflow:hidden; box-shadow:0 20px 50px color-mix(in srgb, var(--blue) 40%, transparent); }
-    .closer h2{ font-size:clamp(2.6rem,7vw,4.5rem); font-weight:700; letter-spacing:-0.04em; line-height:1.03; margin-bottom:20px; text-wrap:balance;
-      background:linear-gradient(180deg,var(--grad-top),var(--grad-bot)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-    .closer p{ color:var(--muted); font-size:clamp(1.05rem,2.2vw,1.3rem); line-height:1.6; margin-bottom:38px; text-wrap:pretty; }
-
-    footer{ border-top:1px solid var(--border); padding:36px 24px; text-align:center; font-size:0.82rem; color:var(--muted); }
-    footer a{ color:var(--muted); }
-    footer a:hover{ color:var(--text); }
-    .footer-inner{ max-width:1000px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; }
-    .footer-links{ display:flex; gap:20px; flex-wrap:wrap; }
-
-    /* ── Toggle de tema ── */
-    .theme-btn{ font-size:0.95rem; line-height:1; background:var(--card-2); border:1px solid var(--border);
-      width:34px; height:34px; border-radius:50%; cursor:pointer; transition:transform .3s var(--ease), background .2s; padding:0; }
-    .theme-btn:hover{ transform:rotate(18deg) scale(1.08); }
-    /* View Transition: barrido circular al cambiar de tema */
-    ::view-transition-old(root), ::view-transition-new(root){ animation:none; mix-blend-mode:normal; }
-    ::view-transition-old(root){ z-index:0; } ::view-transition-new(root){ z-index:1; }
-
-    /* ── Anillos CPU/RAM/disco (como la app) ── */
-    .rings{ padding:64px 24px; }
-    .rings-band{ display:flex; justify-content:center; gap:clamp(26px,8vw,90px); flex-wrap:wrap; }
-    .ring{ position:relative; width:132px; height:132px; }
-    .ring svg{ width:100%; height:100%; transform:rotate(-90deg); }
-    .ring circle{ fill:none; stroke-width:8; }
-    .ring circle.bg{ stroke:color-mix(in srgb, var(--text) 10%, transparent); }
-    .ring circle.fg{ stroke:var(--c); stroke-linecap:round; stroke-dasharray:327; stroke-dashoffset:327; transition:stroke-dashoffset 1.2s var(--ease); }
-    .ring.in circle.fg{ stroke-dashoffset:var(--off); }
-    @media (prefers-reduced-motion: reduce){ .ring circle.fg{ transition:none; stroke-dashoffset:var(--off); } }
-    .ring-num{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-    .ring-num b{ font-size:1.55rem; font-weight:700; letter-spacing:-0.02em; }
-    .ring-num span{ font-size:0.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; margin-top:2px; }
-
-    /* ── Marquesina de tecnologías ── */
-    .marquee{ overflow:hidden; padding:14px 0 2px;
-      -webkit-mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); mask:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); }
-    .marquee-track{ display:flex; width:max-content; animation:scrollx 34s linear infinite; }
-    .marquee:hover .marquee-track{ animation-play-state:paused; }
-    .marquee span{ display:inline-flex; align-items:center; font-size:0.98rem; font-weight:600; color:var(--muted); white-space:nowrap; padding:0 26px; letter-spacing:-0.01em; }
-    .marquee span::after{ content:"◆"; font-size:0.5rem; color:var(--blue); margin-left:26px; opacity:.7; }
-    @keyframes scrollx{ to{ transform:translateX(-50%); } }
-    @media (prefers-reduced-motion: reduce){ .marquee-track{ animation:none; } }
-
-    /* botón magnético: la posición la mueve el JS con transform inline */
-
-    @keyframes langIn{ from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none;} }
-    @media (prefers-reduced-motion: reduce){ .lang-wrap{ animation:none !important; } }
-
-    /* ── Reveal ── */
-    .reveal{ opacity:0; transform:translateY(30px); transition:opacity .8s var(--ease), transform .8s var(--ease); transition-delay:var(--d,0s); }
+    .reveal{ opacity:0; transform:translateY(16px); transition:opacity .6s var(--ease), transform .6s var(--ease); transition-delay:var(--d,0s); }
     .reveal.in{ opacity:1; transform:none; }
-    @media (prefers-reduced-motion: reduce){ .reveal{ opacity:1; transform:none; transition:none; } .hero h1 .w{ opacity:1; transform:none; } .hero-copy .eyebrow,.hero-copy .tagline,.hero-copy .hero-ctas{ opacity:1; transform:none; } }
+    @media (prefers-reduced-motion: reduce){ .reveal{ opacity:1; transform:none; transition:none; } }
   </style>
 </head>
 <body>
 
 <header class="nav">
-  <a class="nav-logo" href="/"><span>🖥</span> Servward</a>
-  <div class="nav-right">
-    <button class="theme-btn" onclick="toggleTheme(event)" aria-label="Cambiar tema claro/oscuro">🌙</button>
-    <div class="lang-toggle">
-      <button data-set="es" class="active" onclick="setLang('es')">ES</button>
-      <button data-set="en" onclick="setLang('en')">EN</button>
+  <div class="nav-in">
+    <a class="brand" href="/"><span>🖥</span> Servward</a>
+    <nav class="nav-links" data-nav>
+      <a data-es href="#features">Funciones</a><a data-en href="#features" hidden>Features</a>
+      <a data-es href="#tour">La app</a><a data-en href="#tour" hidden>The app</a>
+      <a data-es href="#security">Seguridad</a><a data-en href="#security" hidden>Security</a>
+      <a data-es href="#faq">FAQ</a><a data-en href="#faq" hidden>FAQ</a>
+    </nav>
+    <div class="nav-right">
+      <button class="icon-btn" onclick="toggleTheme()" aria-label="Cambiar tema">🌙</button>
+      <div class="lang"><button data-set="es" class="active" onclick="setLang('es')">ES</button><button data-set="en" onclick="setLang('en')">EN</button></div>
+      <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb"><span class="nav-cta-text" data-t>Únete a la beta</span><span style="display:none" class="nav-cta-icon">🚀</span></a>
     </div>
-    <a class="nav-cta" href="https://testflight.apple.com/join/72CwpVGb"><span>🚀</span><span class="long" data-t="cta">Únete a la beta</span></a>
   </div>
-  <div class="nav-progress"><i data-progress></i></div>
 </header>
 
-<!-- ═══════════ ESPAÑOL ═══════════ -->
+<!-- ══════ ES ══════ -->
 <div class="lang-wrap active" data-lang="es">
-
   <section class="hero">
-    <div class="hero-bg" data-px="0.12"></div>
-    <div class="hero-inner">
-      <div class="hero-copy" data-hero-fade>
-        <span class="eyebrow">🚀 Ahora en beta · TestFlight</span>
-        <h1><span class="w" style="--i:0">Tus</span> <span class="w" style="--i:1">servidores,</span> <span class="w" style="--i:2">en</span> <span class="w" style="--i:3">el</span> <span class="w grad" style="--i:4">bolsillo.</span></h1>
-        <p class="tagline">Monitoriza, controla y recibe alertas de tus servidores <strong>Mac y Linux</strong> desde el iPhone. Self-hosted, privado y sin nube.</p>
-        <div class="hero-ctas">
-          <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb">🚀 Únete a la beta</a>
-          <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ Ver en GitHub</a>
-        </div>
+    <div class="wrap">
+      <span class="pill">🚀 <b>Beta</b> · Disponible en TestFlight</span>
+      <h1>Tus servidores Mac y Linux, bajo control desde el iPhone.</h1>
+      <p class="lead">Monitoriza métricas en vivo, reinicia servicios, ejecuta comandos y recibe alertas cuando algo cae. Self-hosted, privado y open source.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="https://testflight.apple.com/join/72CwpVGb">Únete a la beta</a>
+        <a class="btn btn-ghost btn-lg" href="https://github.com/INVESTMENTPERPLE/servward-agent">Ver en GitHub</a>
       </div>
-      <div class="hero-phone" data-tilt>
-        <div class="phone">
-          <span class="live-badge"><i></i>En vivo</span>
-          <video class="hero-video" autoplay muted loop playsinline preload="metadata" poster="img/hero-poster.jpg" aria-label="Grabación real de Servward recorriendo Control, Métricas y Salud">
-            <source src="/media/hero.mp4" type="video/mp4" />
-            <img src="img/app-control-es.png" alt="Servward: pestaña Control con métricas en vivo" />
-          </video>
-        </div>
-      </div>
-    </div>
-    <div class="scroll-cue" aria-hidden="true"></div>
-  </section>
-
-  <div class="stats-wrap">
-    <div class="stats" data-stagger>
-      <div class="stat reveal"><b style="color:var(--blue)" data-count="100" data-suffix="%">100%</b><span>Self-hosted</span></div>
-      <div class="stat reveal"><b style="color:var(--green)">0</b><span>Cuentas cloud</span></div>
-      <div class="stat reveal"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
-      <div class="stat reveal"><b>Mac + Linux</b><span>Compatible</span></div>
-    </div>  </div>
-
-  <div class="marquee reveal" aria-hidden="true"><div class="marquee-track">
-    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
-    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
-  </div></div>
-
-
-  <section class="rings" aria-hidden="true">
-    <div class="section-inner">
-      <div class="rings-band" data-stagger>
-        <div class="ring reveal" style="--c:var(--blue);--off:252"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="23" data-suffix="%">0%</b><span>CPU</span></div></div>
-        <div class="ring reveal" style="--c:var(--purple);--off:193"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="41" data-suffix="%">0%</b><span>RAM</span></div></div>
-        <div class="ring reveal" style="--c:var(--orange);--off:124"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="62" data-suffix="%">0%</b><span>Disco</span></div></div>
-      </div>
-    </div>
-  </section>
-  <section class="showcase alt">
-    <div class="sc-track" data-scrub>
-      <div class="sc-sticky">
-        <div class="sc-head">
-          <p class="section-eyebrow">Grabación real</p>
-          <h2 class="section-title">La app, por dentro.</h2>
-        </div>
-        <div class="sc-copy">
-          <div class="sc-item on"><h3>⚡ Control en vivo</h3><p>CPU, RAM y disco al segundo, servicios, scripts y tus comandos — con el agente v1.7.0 en línea.</p></div>
-          <div class="sc-item"><h3>📈 Métricas con histórico</h3><p>Evolución real de CPU, RAM y disco: 240 muestras, una por minuto, con media y máximos.</p></div>
-          <div class="sc-item"><h3>❤️ Salud del servidor</h3><p>Puntuación 0-100, certificados TLS, endpoints y SMART de discos. Un vistazo y lo sabes todo.</p></div>
-          <div class="sc-item"><h3>⬆️ Actualizaciones del sistema</h3><p>Homebrew en Mac, apt en Linux: ve los paquetes pendientes e instálalos con un toque, sin abrir el terminal.</p></div>
-          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
-        </div>
-        <div class="sc-phone">
-          <div class="phone">
-            <div class="shots">
-              <img class="on" src="img/app-control-es.png" alt="Servward: Control" loading="lazy" />
-              <img src="img/app-metrics.png" alt="Servward: Métricas" loading="lazy" />
-              <img src="img/app-health.png" alt="Servward: Salud" loading="lazy" />
-              <img src="img/app-updates.png" alt="Servward: Actualizaciones" loading="lazy" />
+      <p class="microcopy">Gratis en beta · No necesita cuenta · Tus datos no salen de tu servidor</p>
+      <div class="hero-shot reveal">
+        <div class="browser">
+          <div class="browser-bar"><i></i><i></i><i></i></div>
+          <div class="hero-stage">
+            <div class="device">
+              <video autoplay muted loop playsinline preload="metadata" poster="img/hero-poster.jpg" aria-label="Servward en funcionamiento">
+                <source src="/media/hero.mp4" type="video/mp4" /><img src="img/app-control-es.png" alt="Servward" />
+              </video>
             </div>
           </div>
         </div>
@@ -441,156 +239,101 @@
     </div>
   </section>
 
-  <section>
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">Qué hace</p>
-      <h2 class="section-title reveal">Todo tu servidor, controlado desde el móvil.</h2>
-      <p class="section-sub reveal">Monitorización, control y alertas — sin exponer nada a la nube.</p>
-      <div class="grid" data-stagger>
-        <div class="card reveal"><span class="card-icon">📊</span><h3>Monitorización en vivo</h3><p>CPU, RAM, disco y temperatura, con histórico y gráficas.</p></div>
-        <div class="card reveal"><span class="card-icon">❤️</span><h3>Salud y discos (SMART)</h3><p>Puntuación de salud y estado real de cada disco.</p></div>
-        <div class="card reveal"><span class="card-icon">🔔</span><h3>Alertas push</h3><p>Te avisa cuando un servidor cae o se dispara un umbral que tú fijas.</p></div>
-        <div class="card reveal"><span class="card-icon">🎛️</span><h3>Control remoto</h3><p>Reinicia servicios, ejecuta comandos, ajusta volumen, suspende o mata procesos.</p></div>
-        <div class="card hl reveal"><span class="card-icon">🔄</span><h3>Actualiza el agente desde la app<span class="tag">Nuevo</span></h3><p>Un toque en Ajustes. Mac y Linux, sin abrir el terminal.</p></div>
-        <div class="card reveal"><span class="card-icon">📷</span><h3>Multi-servidor + QR</h3><p>Añade todos tus servidores escaneando un QR. Cambia entre ellos al instante.</p></div>
-        <div class="card reveal"><span class="card-icon">🧩</span><h3>Widget y Live Activity</h3><p>Estado en la pantalla de inicio y alertas de caída en la Isla Dinámica.</p></div>
-        <div class="card reveal"><span class="card-icon">🔒</span><h3>100% privado</h3><p>La app habla directamente con tu servidor. Sin nube, sin cuentas, sin intermediarios.</p></div>
-      </div>
-    </div>
-  </section>
+  <div class="trust"><div class="wrap">
+    <p>Funciona con lo que ya usas</p>
+    <div class="trust-row"><span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span></div>
+  </div></div>
 
-  <section class="alt">
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">A tu gusto</p>
-      <h2 class="section-title reveal">Claro u oscuro.</h2>
-      <p class="section-sub reveal">Se adapta al aspecto de tu iPhone — o elige el que prefieras en Ajustes.</p>
-      <div class="duo" data-stagger>
-        <div class="phone reveal"><img src="img/app-control-light.png" alt="Servward en modo claro" loading="lazy" /></div>
-        <div class="phone reveal"><img src="img/app-control-es.png" alt="Servward en modo oscuro" loading="lazy" /></div>
-      </div>
+  <section id="features"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Funciones</p><h2>Todo tu servidor, en el bolsillo.</h2><p>Lo que necesitas para vigilar y operar tus máquinas, sin exponer nada a la nube.</p></div>
+    <div class="features" data-stagger>
+      <div class="feat reveal"><div class="ic">📊</div><h3>Métricas en vivo</h3><p>CPU, RAM, disco y temperatura al segundo, con histórico y gráficas.</p></div>
+      <div class="feat reveal"><div class="ic">❤️</div><h3>Salud y discos</h3><p>Puntuación 0-100, certificados TLS, endpoints y SMART por disco.</p></div>
+      <div class="feat reveal"><div class="ic">🔔</div><h3>Alertas push</h3><p>Aviso inmediato cuando un servidor cae o se dispara un umbral tuyo.</p></div>
+      <div class="feat reveal"><div class="ic">🎛️</div><h3>Control remoto</h3><p>Reinicia servicios, ejecuta comandos y scripts, suspende o mata procesos.</p></div>
+      <div class="feat reveal"><div class="ic">🔄</div><h3>Actualiza el agente<span class="badge">Nuevo</span></h3><p>Un toque desde la app. Mac y Linux, sin abrir el terminal.</p></div>
+      <div class="feat reveal"><div class="ic">🔒</div><h3>100% privado</h3><p>La app habla directamente con tu servidor. Sin nube ni cuentas.</p></div>
     </div>
-  </section>
+  </div></section>
 
-  <section>
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">Cómo funciona</p>
-      <h2 class="section-title reveal">Listo en minutos.</h2>
-      <div class="steps" data-stagger>
-        <div class="stp reveal"><div class="stp-n">1</div><h3>Instala el agente</h3><p>Un comando en tu servidor, Mac o Linux. Al acabar imprime un QR: escanéalo y la app queda configurada.</p></div>
-        <div class="stp reveal"><div class="stp-n">2</div><h3>Conéctalo</h3><p>Por Tailscale (lo más fácil) o un túnel Cloudflare. Con Tailscale, la URL va incluida en el QR.</p></div>
-        <div class="stp reveal"><div class="stp-n">3</div><h3>Controla desde el iPhone</h3><p>Métricas, salud, alertas y acciones — estés donde estés.</p></div>
-      </div>
-      <div class="cmd reveal"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copiado ✓" onclick="copyCmd(this)">Copiar</button></div>
+  <section id="tour" class="tour"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">La app por dentro</p><h2>Capturas reales, no maquetas.</h2></div>
+    <div class="row reveal">
+      <div class="txt"><h3>Control en vivo</h3><p>El estado de tu servidor de un vistazo, actualizándose solo.</p><ul><li>CPU, RAM y disco en tiempo real</li><li>Servicios, Docker y scripts</li><li>Tus comandos personalizados</li></ul></div>
+      <div class="shot"><div class="device"><img src="img/app-control-es.png" alt="Pestaña Control de Servward" loading="lazy" /></div></div>
     </div>
-  </section>
-
-  <section class="alt">
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">Dudas rápidas</p>
-      <h2 class="section-title reveal">Preguntas frecuentes</h2>
-      <div class="faq reveal">
-        <details><summary>¿Tengo que abrir puertos en el router?</summary><div class="a">No. Con Tailscale o un túnel de Cloudflare la conexión sale de tu servidor hacia fuera: nada de port-forwarding ni de exponer tu IP a internet.</div></details>
-        <details><summary>¿Qué necesita mi servidor?</summary><div class="a">Un Mac (launchd) o un Linux con systemd, con git y Python 3. El instalador de un comando monta el broker y el agente, y te imprime el QR para conectar la app.</div></details>
-        <details><summary>¿Mis datos pasan por servidores de terceros?</summary><div class="a">No. La app habla directamente con tu máquina. Solo las notificaciones push viajan por APNs (Apple), sin contenido sensible.</div></details>
-        <details><summary>¿Es de pago?</summary><div class="a">El agente es open source (MIT) y gratuito para siempre. La app está ahora en beta gratuita por TestFlight.</div></details>
-        <details><summary>¿Cuántos servidores puedo controlar?</summary><div class="a">Varios: añádelos escaneando un QR y cambia entre ellos al instante. Mac y Linux mezclados, sin problema.</div></details>
-        <details><summary>¿Y si no me convence?</summary><div class="a">Un comando y desaparece: <code>ntfyctl uninstall</code> para y elimina los servicios, el código y la configuración del servidor.</div></details>
-      </div>
+    <div class="row rev reveal">
+      <div class="txt"><h3>Métricas con histórico</h3><p>Ve la evolución, no solo el instante.</p><ul><li>240 muestras, una por minuto</li><li>Media y máximos</li><li>CPU, RAM y disco</li></ul></div>
+      <div class="shot"><div class="device"><img src="img/app-metrics.png" alt="Métricas con histórico" loading="lazy" /></div></div>
     </div>
-  </section>
-
-  <section>
-    <div class="section-inner oss-box">
-      <p class="section-eyebrow reveal">Open source</p>
-      <h2 class="section-title reveal">Tuyo de verdad.</h2>
-      <p class="section-sub reveal">El agente es de código abierto (MIT) y se auto-hospeda en tu máquina. Sin cajas negras: tú controlas todo.</p>
-      <a class="btn btn-secondary reveal" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ Ver el código en GitHub</a>
+    <div class="row reveal">
+      <div class="txt"><h3>Salud del servidor</h3><p>Una pantalla y sabes si todo va bien.</p><ul><li>Puntuación 0-100</li><li>Caducidad de certificados TLS</li><li>SMART de discos y endpoints</li></ul></div>
+      <div class="shot"><div class="device"><img src="img/app-health.png" alt="Pantalla de Salud" loading="lazy" /></div></div>
     </div>
-  </section>
+  </div></section>
 
-  <section class="closer alt">
-    <div class="closer-inner">
-      <div class="closer-icon reveal"><img src="/apple-touch-icon.png" alt="Servward" /></div>
-      <h2 class="reveal">Empieza hoy.</h2>
-      <p class="reveal">Instala el agente, escanea el QR, y tu servidor cabe en tu bolsillo.</p>
-      <a class="btn btn-primary btn-lg reveal" href="https://testflight.apple.com/join/72CwpVGb">🚀 Únete a la beta</a>
+  <section id="security"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Seguridad</p><h2>Privado por diseño.</h2><p>Sin nube, sin cuentas, sin datos de terceros. Tú controlas el servidor y las llaves.</p></div>
+    <div class="sec-grid" data-stagger>
+      <div class="sc reveal"><div class="ic">🔗</div><h4>Conexión directa</h4><p>App ↔ tu servidor por Tailscale o Cloudflare. Sin intermediarios.</p></div>
+      <div class="sc reveal"><div class="ic">🔑</div><h4>Token con permisos</h4><p>Modo solo-lectura, rotación de token y emparejamiento temporal.</p></div>
+      <div class="sc reveal"><div class="ic">🛡️</div><h4>Cifrado y anti-fugas</h4><p>Bloqueo de HTTP en claro a hosts públicos y pinning de certificado.</p></div>
+      <div class="sc reveal"><div class="ic">📖</div><h4>Open source</h4><p>El agente es MIT: auditable, sin cajas negras, self-hosted.</p></div>
     </div>
-  </section>
+  </div></section>
 
+  <section id="setup" class="tour"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Puesta en marcha</p><h2>Listo en minutos.</h2></div>
+    <div class="steps" data-stagger>
+      <div class="step reveal"><div class="n">01</div><h4>Instala el agente</h4><p>Un comando en tu Mac o Linux. Al acabar imprime un QR.</p></div>
+      <div class="step reveal"><div class="n">02</div><h4>Escanea el QR</h4><p>La app queda configurada, con la URL incluida si usas Tailscale.</p></div>
+      <div class="step reveal"><div class="n">03</div><h4>Controla</h4><p>Métricas, alertas y acciones desde el iPhone, estés donde estés.</p></div>
+    </div>
+    <div class="cmd reveal"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy" data-done="Copiado ✓" onclick="copyCmd(this)">Copiar</button></div>
+  </div></section>
+
+  <section id="faq"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Preguntas frecuentes</p><h2>Lo que sueles preguntar.</h2></div>
+    <div class="faq reveal">
+      <details><summary>¿Tengo que abrir puertos en el router?</summary><div class="a">No. Con Tailscale o un túnel de Cloudflare la conexión sale de tu servidor hacia fuera. Sin port-forwarding ni exponer tu IP.</div></details>
+      <details><summary>¿Qué necesita mi servidor?</summary><div class="a">Un Mac (launchd) o un Linux con systemd, con git y Python 3. El instalador monta todo y te da el QR para conectar la app.</div></details>
+      <details><summary>¿Mis datos pasan por terceros?</summary><div class="a">No. La app habla directamente con tu máquina. Solo las notificaciones viajan por APNs (Apple), sin contenido sensible.</div></details>
+      <details><summary>¿Es de pago?</summary><div class="a">El agente es open source (MIT) y gratis para siempre. La app está ahora en beta gratuita por TestFlight.</div></details>
+      <details><summary>¿Cuántos servidores puedo controlar?</summary><div class="a">Varios, Mac y Linux mezclados. Los añades escaneando un QR y cambias entre ellos al instante.</div></details>
+      <details><summary>¿Y si quiero quitarlo?</summary><div class="a">Un comando: <code>ntfyctl uninstall</code> para y elimina los servicios, el código y la configuración.</div></details>
+    </div>
+  </div></section>
+
+  <section class="cta"><div class="wrap">
+    <div class="cta-card reveal">
+      <h2>Pruébalo antes que nadie.</h2>
+      <p>Servward está en beta por TestFlight. Únete, trastéalo y ayúdanos a pulirlo.</p>
+      <div class="cta-actions"><a class="btn btn-primary btn-lg" href="https://testflight.apple.com/join/72CwpVGb">Únete a la beta</a><a class="btn btn-ghost btn-lg" href="/testers">Guía de la beta</a></div>
+      <div class="qr"><img src="img/qr-testflight.png" alt="QR para unirse a la beta" loading="lazy" /><span>O escanéalo con la cámara del iPhone</span></div>
+    </div>
+  </div></section>
 </div>
 
-<!-- ═══════════ ENGLISH ═══════════ -->
+<!-- ══════ EN ══════ -->
 <div class="lang-wrap" data-lang="en">
-
   <section class="hero">
-    <div class="hero-bg" data-px="0.12"></div>
-    <div class="hero-inner">
-      <div class="hero-copy" data-hero-fade>
-        <span class="eyebrow">🚀 Now in beta · TestFlight</span>
-        <h1><span class="w" style="--i:0">Your</span> <span class="w" style="--i:1">servers,</span> <span class="w" style="--i:2">in</span> <span class="w" style="--i:3">your</span> <span class="w grad" style="--i:4">pocket.</span></h1>
-        <p class="tagline">Monitor, control and get alerts from your <strong>Mac and Linux</strong> servers on your iPhone. Self-hosted, private, no cloud.</p>
-        <div class="hero-ctas">
-          <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb">🚀 Join the beta</a>
-          <a class="btn btn-secondary" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ View on GitHub</a>
-        </div>
+    <div class="wrap">
+      <span class="pill">🚀 <b>Beta</b> · Available on TestFlight</span>
+      <h1>Your Mac and Linux servers, under control from your iPhone.</h1>
+      <p class="lead">Monitor live metrics, restart services, run commands and get alerts when something goes down. Self-hosted, private and open source.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="https://testflight.apple.com/join/72CwpVGb">Join the beta</a>
+        <a class="btn btn-ghost btn-lg" href="https://github.com/INVESTMENTPERPLE/servward-agent">View on GitHub</a>
       </div>
-      <div class="hero-phone" data-tilt>
-        <div class="phone">
-          <span class="live-badge"><i></i>Live</span>
-          <video class="hero-video" autoplay muted loop playsinline preload="metadata" poster="img/hero-en-poster.jpg" aria-label="Real recording of Servward going through Control, Metrics and Health">
-            <source src="/media/hero-en.mp4" type="video/mp4" />
-            <img src="img/app-control-en.png" alt="Servward: Control tab with live Mac metrics" />
-          </video>
-        </div>
-      </div>
-    </div>
-    <div class="scroll-cue" aria-hidden="true"></div>
-  </section>
-
-  <div class="stats-wrap">
-    <div class="stats" data-stagger>
-      <div class="stat reveal"><b style="color:var(--blue)" data-count="100" data-suffix="%">100%</b><span>Self-hosted</span></div>
-      <div class="stat reveal"><b style="color:var(--green)">0</b><span>Cloud accounts</span></div>
-      <div class="stat reveal"><b style="color:var(--orange)">MIT</b><span>Open source</span></div>
-      <div class="stat reveal"><b>Mac + Linux</b><span>Supported</span></div>
-    </div>  </div>
-
-  <div class="marquee reveal" aria-hidden="true"><div class="marquee-track">
-    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
-    <span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span><span>Homebrew</span><span>Widgets</span><span>Live Activity</span><span>QR</span><span>Python</span>
-  </div></div>
-
-
-  <section class="rings" aria-hidden="true">
-    <div class="section-inner">
-      <div class="rings-band" data-stagger>
-        <div class="ring reveal" style="--c:var(--blue);--off:252"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="23" data-suffix="%">0%</b><span>CPU</span></div></div>
-        <div class="ring reveal" style="--c:var(--purple);--off:193"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="41" data-suffix="%">0%</b><span>RAM</span></div></div>
-        <div class="ring reveal" style="--c:var(--orange);--off:124"><svg viewBox="0 0 120 120"><circle class="bg" cx="60" cy="60" r="52"/><circle class="fg" cx="60" cy="60" r="52"/></svg><div class="ring-num"><b data-count="62" data-suffix="%">0%</b><span>Disk</span></div></div>
-      </div>
-    </div>
-  </section>
-  <section class="showcase alt">
-    <div class="sc-track" data-scrub>
-      <div class="sc-sticky">
-        <div class="sc-head">
-          <p class="section-eyebrow">Real recording</p>
-          <h2 class="section-title">Inside the app.</h2>
-        </div>
-        <div class="sc-copy">
-          <div class="sc-item on"><h3>⚡ Live control</h3><p>CPU, RAM and disk by the second, services, scripts and your commands — agent v1.7.0 online.</p></div>
-          <div class="sc-item"><h3>📈 Metrics with history</h3><p>Real CPU, RAM and disk over time: 240 samples, one per minute, with average and peaks.</p></div>
-          <div class="sc-item"><h3>❤️ Server health</h3><p>0-100 score, TLS certificates, endpoints and disk SMART. One glance and you know it all.</p></div>
-          <div class="sc-item"><h3>⬆️ System updates</h3><p>Homebrew on Mac, apt on Linux: see pending packages and install them with one tap, no terminal.</p></div>
-          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
-        </div>
-        <div class="sc-phone">
-          <div class="phone">
-            <div class="shots">
-              <img class="on" src="img/app-control-en.png" alt="Servward: Control" loading="lazy" />
-              <img src="img/app-metrics.png" alt="Servward: Metrics" loading="lazy" />
-              <img src="img/app-health.png" alt="Servward: Health" loading="lazy" />
-              <img src="img/app-updates.png" alt="Servward: Updates" loading="lazy" />
+      <p class="microcopy">Free in beta · No account needed · Your data never leaves your server</p>
+      <div class="hero-shot reveal">
+        <div class="browser">
+          <div class="browser-bar"><i></i><i></i><i></i></div>
+          <div class="hero-stage">
+            <div class="device">
+              <video autoplay muted loop playsinline preload="metadata" poster="img/hero-en-poster.jpg" aria-label="Servward in action">
+                <source src="/media/hero-en.mp4" type="video/mp4" /><img src="img/app-control-en.png" alt="Servward" />
+              </video>
             </div>
           </div>
         </div>
@@ -598,226 +341,116 @@
     </div>
   </section>
 
-  <section>
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">What it does</p>
-      <h2 class="section-title reveal">Your whole server, from your phone.</h2>
-      <p class="section-sub reveal">Monitoring, control and alerts — without exposing anything to the cloud.</p>
-      <div class="grid" data-stagger>
-        <div class="card reveal"><span class="card-icon">📊</span><h3>Live monitoring</h3><p>CPU, RAM, disk and temperature, with history and charts.</p></div>
-        <div class="card reveal"><span class="card-icon">❤️</span><h3>Health & disks (SMART)</h3><p>A health score and real per-disk status.</p></div>
-        <div class="card reveal"><span class="card-icon">🔔</span><h3>Push alerts</h3><p>Notifies you when a server goes down or a threshold you set is crossed.</p></div>
-        <div class="card reveal"><span class="card-icon">🎛️</span><h3>Remote control</h3><p>Restart services, run commands, set volume, sleep or kill processes.</p></div>
-        <div class="card hl reveal"><span class="card-icon">🔄</span><h3>Update the agent from the app<span class="tag">New</span></h3><p>One tap in Settings. Mac and Linux, no terminal needed.</p></div>
-        <div class="card reveal"><span class="card-icon">📷</span><h3>Multi-server + QR</h3><p>Add all your servers by scanning a QR. Switch between them instantly.</p></div>
-        <div class="card reveal"><span class="card-icon">🧩</span><h3>Widget & Live Activity</h3><p>Status on your Home Screen and down alerts in the Dynamic Island.</p></div>
-        <div class="card reveal"><span class="card-icon">🔒</span><h3>100% private</h3><p>The app talks directly to your server. No cloud, no accounts, no middlemen.</p></div>
-      </div>
-    </div>
-  </section>
+  <div class="trust"><div class="wrap">
+    <p>Works with what you already use</p>
+    <div class="trust-row"><span>Tailscale</span><span>Cloudflare Tunnel</span><span>Docker</span><span>systemd</span><span>launchd</span><span>SMART</span><span>APNs</span></div>
+  </div></div>
 
-  <section class="alt">
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">Your way</p>
-      <h2 class="section-title reveal">Light or dark.</h2>
-      <p class="section-sub reveal">It follows your iPhone's appearance — or pick the one you prefer in Settings.</p>
-      <div class="duo" data-stagger>
-        <div class="phone reveal"><img src="img/app-control-light.png" alt="Servward in light mode" loading="lazy" /></div>
-        <div class="phone reveal"><img src="img/app-control-en.png" alt="Servward in dark mode" loading="lazy" /></div>
-      </div>
+  <section id="features-en"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Features</p><h2>Your whole server, in your pocket.</h2><p>Everything to watch and operate your machines, without exposing anything to the cloud.</p></div>
+    <div class="features" data-stagger>
+      <div class="feat reveal"><div class="ic">📊</div><h3>Live metrics</h3><p>CPU, RAM, disk and temperature by the second, with history and charts.</p></div>
+      <div class="feat reveal"><div class="ic">❤️</div><h3>Health & disks</h3><p>0-100 score, TLS certificates, endpoints and per-disk SMART.</p></div>
+      <div class="feat reveal"><div class="ic">🔔</div><h3>Push alerts</h3><p>Instant notice when a server goes down or a threshold you set is crossed.</p></div>
+      <div class="feat reveal"><div class="ic">🎛️</div><h3>Remote control</h3><p>Restart services, run commands and scripts, sleep or kill processes.</p></div>
+      <div class="feat reveal"><div class="ic">🔄</div><h3>Update the agent<span class="badge">New</span></h3><p>One tap from the app. Mac and Linux, no terminal needed.</p></div>
+      <div class="feat reveal"><div class="ic">🔒</div><h3>100% private</h3><p>The app talks directly to your server. No cloud, no accounts.</p></div>
     </div>
-  </section>
+  </div></section>
 
-  <section>
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">How it works</p>
-      <h2 class="section-title reveal">Set up in minutes.</h2>
-      <div class="steps" data-stagger>
-        <div class="stp reveal"><div class="stp-n">1</div><h3>Install the agent</h3><p>One command on your server, Mac or Linux. It ends by printing a QR: scan it and the app is configured.</p></div>
-        <div class="stp reveal"><div class="stp-n">2</div><h3>Connect it</h3><p>Over Tailscale (easiest) or a Cloudflare tunnel. With Tailscale, the URL is included in the QR.</p></div>
-        <div class="stp reveal"><div class="stp-n">3</div><h3>Control from your iPhone</h3><p>Metrics, health, alerts and actions — from anywhere.</p></div>
-      </div>
-      <div class="cmd reveal"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copied ✓" onclick="copyCmd(this)">Copy</button></div>
+  <section id="tour-en" class="tour"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Inside the app</p><h2>Real screenshots, no mockups.</h2></div>
+    <div class="row reveal">
+      <div class="txt"><h3>Live control</h3><p>Your server's status at a glance, updating on its own.</p><ul><li>Real-time CPU, RAM and disk</li><li>Services, Docker and scripts</li><li>Your custom commands</li></ul></div>
+      <div class="shot"><div class="device"><img src="img/app-control-en.png" alt="Servward Control tab" loading="lazy" /></div></div>
     </div>
-  </section>
-
-  <section class="alt">
-    <div class="section-inner">
-      <p class="section-eyebrow reveal">Quick answers</p>
-      <h2 class="section-title reveal">Frequently asked questions</h2>
-      <div class="faq reveal">
-        <details><summary>Do I need to open ports on my router?</summary><div class="a">No. With Tailscale or a Cloudflare tunnel the connection goes outbound from your server: no port-forwarding, no exposing your IP to the internet.</div></details>
-        <details><summary>What does my server need?</summary><div class="a">A Mac (launchd) or a Linux box with systemd, plus git and Python 3. The one-command installer sets up the broker and the agent, and prints the QR to connect the app.</div></details>
-        <details><summary>Does my data go through third-party servers?</summary><div class="a">No. The app talks directly to your machine. Only push notifications travel through Apple's APNs, with no sensitive content.</div></details>
-        <details><summary>Is it paid?</summary><div class="a">The agent is open source (MIT) and free forever. The app is currently in a free TestFlight beta.</div></details>
-        <details><summary>How many servers can I control?</summary><div class="a">Several: add them by scanning a QR and switch instantly. Mac and Linux mixed, no problem.</div></details>
-        <details><summary>What if it's not for me?</summary><div class="a">One command and it's gone: <code>ntfyctl uninstall</code> stops and removes the services, code and configuration from your server.</div></details>
-      </div>
+    <div class="row rev reveal">
+      <div class="txt"><h3>Metrics with history</h3><p>See the trend, not just the moment.</p><ul><li>240 samples, one per minute</li><li>Average and peaks</li><li>CPU, RAM and disk</li></ul></div>
+      <div class="shot"><div class="device"><img src="img/app-metrics.png" alt="Metrics with history" loading="lazy" /></div></div>
     </div>
-  </section>
-
-  <section>
-    <div class="section-inner oss-box">
-      <p class="section-eyebrow reveal">Open source</p>
-      <h2 class="section-title reveal">Truly yours.</h2>
-      <p class="section-sub reveal">The agent is open source (MIT) and self-hosted on your own machine. No black boxes: you control everything.</p>
-      <a class="btn btn-secondary reveal" href="https://github.com/INVESTMENTPERPLE/servward-agent">★ View the code on GitHub</a>
+    <div class="row reveal">
+      <div class="txt"><h3>Server health</h3><p>One screen and you know it's all fine.</p><ul><li>0-100 score</li><li>TLS certificate expiry</li><li>Disk SMART and endpoints</li></ul></div>
+      <div class="shot"><div class="device"><img src="img/app-health.png" alt="Health screen" loading="lazy" /></div></div>
     </div>
-  </section>
+  </div></section>
 
-  <section class="closer alt">
-    <div class="closer-inner">
-      <div class="closer-icon reveal"><img src="/apple-touch-icon.png" alt="Servward" /></div>
-      <h2 class="reveal">Start today.</h2>
-      <p class="reveal">Install the agent, scan the QR, and your server fits in your pocket.</p>
-      <a class="btn btn-primary btn-lg reveal" href="https://testflight.apple.com/join/72CwpVGb">🚀 Join the beta</a>
+  <section id="security-en"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Security</p><h2>Private by design.</h2><p>No cloud, no accounts, no third-party data. You own the server and the keys.</p></div>
+    <div class="sec-grid" data-stagger>
+      <div class="sc reveal"><div class="ic">🔗</div><h4>Direct connection</h4><p>App ↔ your server over Tailscale or Cloudflare. No middlemen.</p></div>
+      <div class="sc reveal"><div class="ic">🔑</div><h4>Scoped token</h4><p>Read-only mode, token rotation and temporary pairing codes.</p></div>
+      <div class="sc reveal"><div class="ic">🛡️</div><h4>Encrypted, leak-safe</h4><p>Blocks plaintext HTTP to public hosts, with certificate pinning.</p></div>
+      <div class="sc reveal"><div class="ic">📖</div><h4>Open source</h4><p>The agent is MIT: auditable, no black boxes, self-hosted.</p></div>
     </div>
-  </section>
+  </div></section>
 
+  <section id="setup-en" class="tour"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">Getting started</p><h2>Set up in minutes.</h2></div>
+    <div class="steps" data-stagger>
+      <div class="step reveal"><div class="n">01</div><h4>Install the agent</h4><p>One command on your Mac or Linux. It ends by printing a QR.</p></div>
+      <div class="step reveal"><div class="n">02</div><h4>Scan the QR</h4><p>The app gets configured, with the URL included if you use Tailscale.</p></div>
+      <div class="step reveal"><div class="n">03</div><h4>Control</h4><p>Metrics, alerts and actions from your iPhone, from anywhere.</p></div>
+    </div>
+    <div class="cmd reveal"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy" data-done="Copied ✓" onclick="copyCmd(this)">Copy</button></div>
+  </div></section>
+
+  <section id="faq-en"><div class="wrap">
+    <div class="sec-head reveal"><p class="kicker">FAQ</p><h2>What people usually ask.</h2></div>
+    <div class="faq reveal">
+      <details><summary>Do I need to open router ports?</summary><div class="a">No. With Tailscale or a Cloudflare tunnel the connection goes outbound from your server. No port-forwarding, no exposing your IP.</div></details>
+      <details><summary>What does my server need?</summary><div class="a">A Mac (launchd) or a Linux box with systemd, plus git and Python 3. The installer sets everything up and gives you the QR to connect the app.</div></details>
+      <details><summary>Does my data go through third parties?</summary><div class="a">No. The app talks directly to your machine. Only notifications travel through Apple's APNs, with no sensitive content.</div></details>
+      <details><summary>Is it paid?</summary><div class="a">The agent is open source (MIT) and free forever. The app is currently in a free TestFlight beta.</div></details>
+      <details><summary>How many servers can I control?</summary><div class="a">Several, Mac and Linux mixed. Add them by scanning a QR and switch instantly.</div></details>
+      <details><summary>What if I want to remove it?</summary><div class="a">One command: <code>ntfyctl uninstall</code> stops and removes the services, code and configuration.</div></details>
+    </div>
+  </div></section>
+
+  <section class="cta"><div class="wrap">
+    <div class="cta-card reveal">
+      <h2>Try it before anyone else.</h2>
+      <p>Servward is in beta on TestFlight. Join, play with it, and help us polish it.</p>
+      <div class="cta-actions"><a class="btn btn-primary btn-lg" href="https://testflight.apple.com/join/72CwpVGb">Join the beta</a><a class="btn btn-ghost btn-lg" href="/testers">Beta guide</a></div>
+      <div class="qr"><img src="img/qr-testflight.png" alt="QR to join the beta" loading="lazy" /><span>Or scan it with your iPhone camera</span></div>
+    </div>
+  </div></section>
 </div>
 
-<footer>
-  <div class="footer-inner">
-    <span>© 2026 EspymeLab</span>
-    <div class="footer-links">
-      <a href="/testers">Beta</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/eula">Terms</a>
-      <a href="https://github.com/INVESTMENTPERPLE/servward-agent">GitHub</a>
-    </div>
+<footer><div class="wrap">
+  <div class="foot">
+    <div class="foot-brand"><a class="brand" href="/"><span>🖥</span> Servward</a><p data-es>Controla tus servidores Mac y Linux desde el iPhone. Self-hosted y open source.</p><p data-en hidden>Control your Mac and Linux servers from your iPhone. Self-hosted and open source.</p></div>
+    <div><h5 data-es>Producto</h5><h5 data-en hidden>Product</h5><a href="#features" data-es>Funciones</a><a href="#features" data-en hidden>Features</a><a href="#tour" data-es>La app</a><a href="#tour" data-en hidden>The app</a><a href="#security" data-es>Seguridad</a><a href="#security" data-en hidden>Security</a></div>
+    <div><h5 data-es>Recursos</h5><h5 data-en hidden>Resources</h5><a href="/testers" data-es>Guía de la beta</a><a href="/testers" data-en hidden>Beta guide</a><a href="https://github.com/INVESTMENTPERPLE/servward-agent">GitHub</a><a href="https://testflight.apple.com/join/72CwpVGb">TestFlight</a></div>
+    <div><h5>Legal</h5><a href="/privacy" data-es>Privacidad</a><a href="/privacy" data-en hidden>Privacy</a><a href="/eula" data-es>Términos</a><a href="/eula" data-en hidden>Terms</a></div>
   </div>
-</footer>
+  <div class="foot-bottom"><span>© 2026 EspymeLab</span><span>Hecho con cuidado · Madrid</span></div>
+</div></footer>
 
 <script>
 (function(){
-  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var fine = window.matchMedia('(pointer: fine)').matches;
+  var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   function qsa(s,r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); }
+  function resolved(){ return document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); }
+  function themeUI(t){ var b=document.querySelector('.icon-btn'); if(b){ b.textContent=t==='dark'?'☀️':'🌙'; b.setAttribute('aria-pressed',String(t==='dark')); } var m=document.getElementById('tc'); if(m) m.setAttribute('content', t==='dark'?'#0a0a0b':'#ffffff'); }
+  window.toggleTheme=function(){ var n=resolved()==='dark'?'light':'dark'; document.documentElement.dataset.theme=n; try{localStorage.setItem('sw-theme',n);}catch(e){} themeUI(n); };
+  themeUI(resolved());
 
-  window.setLang = function(l){
+  window.setLang=function(l){
     qsa('.lang-wrap').forEach(function(w){ w.classList.toggle('active', w.getAttribute('data-lang')===l); });
-    qsa('.lang-toggle button').forEach(function(b){ var on=b.getAttribute('data-set')===l; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); });
-    var act=document.querySelector('.lang-wrap.active'); if(act){ act.style.animation='none'; act.offsetHeight; act.style.animation='langIn .45s var(--ease)'; }
-    var cta=document.querySelector('.nav-cta [data-t="cta"]');
-    if(cta) cta.textContent = (l==='en'?'Join the beta':'Únete a la beta');
-    document.documentElement.lang=l;
-    setupScrub(); revealScan(); countScan(); update();
+    qsa('.lang button').forEach(function(b){ var on=b.getAttribute('data-set')===l; b.classList.toggle('active',on); b.setAttribute('aria-pressed',String(on)); });
+    qsa('[data-es]').forEach(function(e){ e.hidden = (l!=='es'); });
+    qsa('[data-en]').forEach(function(e){ e.hidden = (l!=='en'); });
+    var cta=document.querySelector('.nav-cta-text'); if(cta) cta.textContent=(l==='en'?'Join the beta':'Únete a la beta');
+    document.documentElement.lang=l; revealScan();
   };
-  window.copyCmd = function(btn){
-    var code=btn.parentElement.querySelector('code');
-    var orig=btn.getAttribute('data-orig')||btn.textContent; btn.setAttribute('data-orig',orig);
-    navigator.clipboard.writeText((code.innerText||code.textContent).trim()).then(function(){
-      btn.textContent=btn.getAttribute('data-done'); setTimeout(function(){ btn.textContent=orig; },1600);
-    }).catch(function(){ btn.textContent='⌘C'; setTimeout(function(){ btn.textContent=orig; },1600); });
-  };
+  window.copyCmd=function(btn){ var c=btn.parentElement.querySelector('code'); var o=btn.getAttribute('data-orig')||btn.textContent; btn.setAttribute('data-orig',o);
+    navigator.clipboard.writeText((c.innerText||c.textContent).trim()).then(function(){ btn.textContent=btn.getAttribute('data-done'); setTimeout(function(){btn.textContent=o;},1500); }).catch(function(){}); };
 
-  // ── Tema: toggle manual con barrido circular (View Transitions) ──
-  function resolvedTheme(){ return document.documentElement.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
-  function updateThemeUI(th){
-    var b=document.querySelector('.theme-btn'); if(b){ b.textContent = (th==='dark' ? '☀️' : '🌙'); b.setAttribute('aria-pressed', String(th==='dark')); }
-    var m=document.getElementById('tc'); if(m) m.setAttribute('content', th==='dark' ? '#000000' : '#ffffff');
-  }
-  function applyTheme(th){ document.documentElement.dataset.theme=th; try{ localStorage.setItem('sw-theme', th); }catch(e){} updateThemeUI(th); }
-  window.toggleTheme=function(ev){
-    var next = resolvedTheme()==='dark' ? 'light' : 'dark';
-    if(!document.startViewTransition || reduced){ applyTheme(next); return; }
-    var x=(ev&&ev.clientX)||window.innerWidth-40, y=(ev&&ev.clientY)||30;
-    var rmax=Math.hypot(Math.max(x, window.innerWidth-x), Math.max(y, window.innerHeight-y));
-    var vt=document.startViewTransition(function(){ applyTheme(next); });
-    vt.ready.then(function(){
-      document.documentElement.animate(
-        { clipPath:['circle(0px at '+x+'px '+y+'px)','circle('+rmax+'px at '+x+'px '+y+'px)'] },
-        { duration:560, easing:'cubic-bezier(.2,.7,.3,1)', pseudoElement:'::view-transition-new(root)' });
-    });
-  };
-  updateThemeUI(resolvedTheme());
-
-  // ── Números que cuentan al entrar en pantalla ──
-  var countObs=new IntersectionObserver(function(es){
-    es.forEach(function(e){
-      if(!e.isIntersecting) return;
-      var el=e.target; countObs.unobserve(el);
-      var target=parseInt(el.getAttribute('data-count'),10)||0, suf=el.getAttribute('data-suffix')||'';
-      if(reduced){ el.textContent=target+suf; return; }
-      var t0=null, dur=1200;
-      function step(ts){ if(!t0)t0=ts; var k=Math.min(1,(ts-t0)/dur); var e2=1-Math.pow(1-k,3);
-        el.textContent=Math.round(target*e2)+suf; if(k<1) requestAnimationFrame(step); }
-      requestAnimationFrame(step);
-    });
-  },{threshold:0.6});
-  function countScan(){ qsa('.lang-wrap.active [data-count]').forEach(function(el){ countObs.observe(el); }); }
-
-  // ── Scrub de vídeo por scroll (solo desktop capaz). Móvil/reduced → bucle. ──
-  function setupScrub(){
-    // Cambio de capturas por scroll (fiable en todo navegador). Estático solo si reduced-motion.
-    qsa('.lang-wrap.active [data-scrub]').forEach(function(track){ track.classList.toggle('sc-static', reduced); });
-  }
-
-  var ticking=false;
-  function onScroll(){ if(!ticking){ ticking=true; requestAnimationFrame(update); } }
-  function clamp(x,a,b){ return Math.max(a,Math.min(b,x)); }
-
-  function update(){
-    ticking=false;
-    var y=window.scrollY, vh=window.innerHeight;
-    var nav=document.querySelector('.nav'); if(nav) nav.classList.toggle('scrolled', y>28);
-    var p=document.querySelector('[data-progress]');
-    if(p){ var h=document.documentElement.scrollHeight - vh; p.style.width=(h>0?clamp(y/h,0,1)*100:0)+'%'; }
-    if(reduced) return;
-
-    var wrap=document.querySelector('.lang-wrap.active'); if(!wrap) return;
-
-    var hero=wrap.querySelector('.hero');
-    if(hero && y < vh*1.3){
-      var hf=wrap.querySelector('[data-hero-fade]');
-      if(hf){ var k=clamp(y/(vh*0.7),0,1); hf.style.opacity=String(1-k*0.9); hf.style.transform='translateY('+(-k*34)+'px)'; }
-      var hp=wrap.querySelector('.hero-phone .phone');
-      if(hp && !hp._tilting){ var hk=clamp(y/(vh*0.9),0,1); hp.style.transform='translateY('+(y*0.10)+'px) scale('+(1-hk*0.06)+')'; }
-      var cue=wrap.querySelector('.scroll-cue'); if(cue) cue.style.opacity=String(Math.max(0,1-y/(vh*0.25)));
-    }
-    qsa('[data-px]', wrap).forEach(function(el){ var f=parseFloat(el.getAttribute('data-px'))||0; el.style.transform='translate(-50%,'+(y*f)+'px)'; });
-
-    if(window.innerWidth > 820) qsa('[data-scrub]', wrap).forEach(function(w){
-      var r=w.getBoundingClientRect(), total=r.height - vh; if(total<=0) return;
-      var prog=clamp(-r.top/total, 0, 1);
-      var items=qsa('.sc-item', w), imgs=qsa('.shots img', w), dots=qsa('.sc-dots i', w), n=items.length;
-      var idx=Math.min(n-1, Math.floor(prog*n));
-      items.forEach(function(el,i){ el.classList.toggle('on', i===idx); });
-      imgs.forEach(function(el,i){ el.classList.toggle('on', i===idx); });
-      dots.forEach(function(el,i){ el.classList.toggle('on', i===idx); });
-      var ph=w.querySelector('.sc-phone .phone');
-      if(ph){ var intra=prog*n-idx, wob=Math.sin(Math.PI*intra); ph.style.transform='translateY('+((0.5-intra)*12)+'px) scale('+(0.985+wob*0.015)+')'; }
-    });
-  }
-
-  if(!reduced && fine){
-    qsa('[data-tilt]').forEach(function(zone){
-      var ph=zone.querySelector('.phone'); if(!ph) return;
-      zone.addEventListener('mousemove', function(e){
-        var r=zone.getBoundingClientRect(); var dx=(e.clientX-r.left)/r.width-0.5, dy=(e.clientY-r.top)/r.height-0.5;
-        ph._tilting=true; ph.style.transform='rotateY('+(dx*10)+'deg) rotateX('+(-dy*8)+'deg) translateY('+(window.scrollY*0.10)+'px)';
-      });
-      zone.addEventListener('mouseleave', function(){ ph._tilting=false; ph.style.transform='translateY('+(window.scrollY*0.10)+'px)'; });
-    });
-    qsa('.card').forEach(function(c){ c.addEventListener('mousemove', function(e){ var r=c.getBoundingClientRect(); c.style.setProperty('--mx',((e.clientX-r.left)/r.width*100)+'%'); c.style.setProperty('--my',((e.clientY-r.top)/r.height*100)+'%'); }); });
-    qsa('.btn-primary').forEach(function(b){
-      b.addEventListener('mousemove', function(e){ var r=b.getBoundingClientRect(); b.style.transform='translate('+((e.clientX-r.left-r.width/2)*0.22)+'px,'+((e.clientY-r.top-r.height/2)*0.34)+'px)'; });
-      b.addEventListener('mouseleave', function(){ b.style.transform=''; });
-    });
-  }
-
-  var obs=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); obs.unobserve(e.target); } }); },{threshold:0.12, rootMargin:'0px 0px -6% 0px'});
-  function revealScan(){
-    qsa('.lang-wrap.active [data-stagger]').forEach(function(g){ qsa('.reveal', g).forEach(function(el,i){ el.style.setProperty('--d',(i*70)+'ms'); }); });
-    qsa('.lang-wrap.active .reveal:not(.in), .closer .reveal:not(.in)').forEach(function(el){ obs.observe(el); });
-  }
-
-  window.addEventListener('scroll', onScroll, {passive:true});
-  window.addEventListener('resize', function(){ setupScrub(); onScroll(); }, {passive:true});
-  setupScrub(); revealScan(); countScan(); update();
+  var obs=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); obs.unobserve(e.target); } }); },{threshold:0.1, rootMargin:'0px 0px -5% 0px'});
+  function revealScan(){ if(reduced) return; qsa('.lang-wrap.active [data-stagger]').forEach(function(g){ qsa('.reveal',g).forEach(function(el,i){ el.style.setProperty('--d',(i*60)+'ms'); }); }); qsa('.lang-wrap.active .reveal:not(.in)').forEach(function(el){ obs.observe(el); }); }
+  revealScan();
   (function(){ var n=(navigator.language||'es').toLowerCase(); if(n.indexOf('es')!==0) window.setLang('en'); })();
 })();
 </script>
-
 </body>
 </html>
