@@ -43,7 +43,7 @@ fi
 echo "==> 1/5 dependencias"
 if command -v apt-get >/dev/null 2>&1; then
   apt-get update -qq || true                          # un repo de terceros roto no debe abortar
-  apt-get install -y -qq python3 python3-psutil || true
+  apt-get install -y -qq python3 python3-psutil python3-qrcode || true
 fi
 
 echo "==> 2/5 usuario + código en /opt/ntfy"
@@ -136,11 +136,31 @@ visudo -cf /etc/sudoers.d/servward-update >/dev/null 2>&1 || rm -f /etc/sudoers.
 sleep 1
 ntfyctl status || true
 
+# ── Tailscale: si está activo, la URL va incluida en el QR y en el código ────
+TS_IP=""
+if command -v tailscale >/dev/null 2>&1; then
+  TS_IP="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+fi
+if [ -z "$TS_IP" ]; then
+  TS_IP="$(ip -4 -o addr show tailscale0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1 || true)"
+fi
+SRV_URL=""
+if [ -n "$TS_IP" ]; then SRV_URL="http://$TS_IP:$PORT"; fi
+
 # ── Configuración empaquetada para la app (pegar / QR) ───────────────────────
-CONFIG_JSON=$(printf '{"name":"%s","cmd":"%s","resp":"%s","token":"%s","rotoken":"%s"}' \
-  "$NAME" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN" "$TOKEN_RO")
+CONFIG_JSON=$(printf '{"name":"%s","url":"%s","cmd":"%s","resp":"%s","token":"%s","rotoken":"%s"}' \
+  "$NAME" "$SRV_URL" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN" "$TOKEN_RO")
 CONFIG_B64=$(printf '%s' "$CONFIG_JSON" | base64 | tr -d '\n')
-DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}&rotoken=${TOKEN_RO}"
+URL_ENC=$(printf '%s' "$SRV_URL" | sed 's/:/%3A/g; s|/|%2F|g')
+DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}&rotoken=${TOKEN_RO}&url=${URL_ENC}"
+
+if [ -n "$SRV_URL" ]; then
+  URL_LINE="  URL        : $SRV_URL   ← Tailscale detectado ✅"
+  HINT_LINE="  (Incluye nombre, topics, token y URL: conexión en un paso.)"
+else
+  URL_LINE="  URL        : según cómo lo expongas ↓"
+  HINT_LINE="  (Incluye nombre, topics y token. Solo tendrás que añadir la URL.)"
+fi
 
 cat <<EOF
 
@@ -152,14 +172,14 @@ CONFIGURACIÓN RÁPIDA (recomendado):
 
   $CONFIG_B64
 
-  (Incluye nombre, topics y token. Solo tendrás que añadir la URL.)
+$HINT_LINE
 
 O a mano → Ajustes → Añadir servidor:
   Nombre     : $NAME
   Órdenes    : $CMD_TOPIC
   Respuestas : $RESP_TOPIC
   Token      : $TOKEN
-  URL        : según cómo lo expongas ↓
+$URL_LINE
 
 Exponer (elige UNO):
   • Tailscale (fácil): instala tailscale; URL = http://100.x.x.x:2586
@@ -171,10 +191,31 @@ Para los botones de Reiniciar/Parar servicios necesitas además:
 ────────────────────────────────────────────────────────────────────
 EOF
 
-# QR opcional (escanéalo con la cámara del iPhone → abre la app y la configura)
-if command -v qrencode >/dev/null 2>&1; then
-  echo "Escanea este QR con la cámara del iPhone:"
-  qrencode -t ANSIUTF8 "$DEEPLINK"
-else
-  echo "(Instala 'qrencode' para un QR escaneable en Debian/Ubuntu:  apt-get install -y qrencode)"
+if [ -z "$SRV_URL" ]; then
+  cat <<'EOF'
+⚠️  Tailscale no detectado (vía fácil recomendada):
+    1. Instálalo:  curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up
+    2. Re-ejecuta este instalador → el QR saldrá con la URL ya incluida
+EOF
+fi
+
+# QR (escanéalo con la cámara del iPhone → abre la app y la deja configurada)
+echo
+echo "Escanea este QR con la cámara del iPhone:"
+if ! /usr/bin/python3 - "$DEEPLINK" <<'PYQ'
+import sys
+try:
+    import qrcode
+except Exception:
+    sys.exit(1)
+q = qrcode.QRCode(border=2)
+q.add_data(sys.argv[1])
+q.print_ascii(invert=True)
+PYQ
+then
+  if command -v qrencode >/dev/null 2>&1; then
+    qrencode -t ANSIUTF8 "$DEEPLINK"
+  else
+    echo "(QR no disponible — usa el código de arriba. Tip:  apt-get install -y python3-qrcode)"
+  fi
 fi

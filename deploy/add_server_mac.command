@@ -41,8 +41,8 @@ WL_LINE=""
 [ -n "$WHITELIST" ] && WL_LINE="    <key>SERVICE_WHITELIST</key><string>$WHITELIST</string>"
 
 echo "==> dependencias python (requests, psutil)"
-$PY -m pip install --user requests psutil >/dev/null 2>&1 \
-  || $PY -m pip install --user --break-system-packages requests psutil >/dev/null 2>&1 \
+$PY -m pip install --user requests psutil qrcode >/dev/null 2>&1 \
+  || $PY -m pip install --user --break-system-packages requests psutil qrcode >/dev/null 2>&1 \
   || echo "   ⚠️ instala 'requests' y 'psutil' a mano si el arranque falla"
 
 mkplist() {  # label script short
@@ -87,11 +87,30 @@ done
 sleep 1
 ntfyctl status || true
 
+# ── Tailscale: si está activo, la URL va incluida en el QR y en el código ────
+TS_BIN="$(command -v tailscale || true)"
+if [ -z "$TS_BIN" ] && [ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then
+  TS_BIN="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+fi
+TS_IP=""
+if [ -n "$TS_BIN" ]; then TS_IP="$("$TS_BIN" ip -4 2>/dev/null | head -1 || true)"; fi
+SRV_URL=""
+if [ -n "$TS_IP" ]; then SRV_URL="http://$TS_IP:$PORT"; fi
+
 # ── Configuración empaquetada para la app (pegar / QR) ───────────────────────
-CONFIG_JSON=$(printf '{"name":"%s","cmd":"%s","resp":"%s","token":"%s","rotoken":"%s"}' \
-  "$NAME" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN" "$TOKEN_RO")
+CONFIG_JSON=$(printf '{"name":"%s","url":"%s","cmd":"%s","resp":"%s","token":"%s","rotoken":"%s"}' \
+  "$NAME" "$SRV_URL" "$CMD_TOPIC" "$RESP_TOPIC" "$TOKEN" "$TOKEN_RO")
 CONFIG_B64=$(printf '%s' "$CONFIG_JSON" | base64 | tr -d '\n')
-DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}&rotoken=${TOKEN_RO}"
+URL_ENC=$(printf '%s' "$SRV_URL" | sed 's/:/%3A/g; s|/|%2F|g')
+DEEPLINK="servward://add?name=${NAME}&cmd=${CMD_TOPIC}&resp=${RESP_TOPIC}&token=${TOKEN}&rotoken=${TOKEN_RO}&url=${URL_ENC}"
+
+if [ -n "$SRV_URL" ]; then
+  URL_LINE="  URL        : $SRV_URL   ← Tailscale detectado ✅"
+  HINT_LINE="  (Incluye nombre, topics, token y URL: conexión en un paso.)"
+else
+  URL_LINE="  URL        : según cómo lo expongas ↓"
+  HINT_LINE="  (Incluye nombre, topics y token. Solo tendrás que añadir la URL.)"
+fi
 
 cat <<EOF
 
@@ -103,14 +122,14 @@ CONFIGURACIÓN RÁPIDA (recomendado):
 
   $CONFIG_B64
 
-  (Incluye nombre, topics y token. Solo tendrás que añadir la URL.)
+$HINT_LINE
 
 O a mano → Ajustes → Añadir servidor:
   Nombre     : $NAME
   Órdenes    : $CMD_TOPIC
   Respuestas : $RESP_TOPIC
   Token      : $TOKEN
-  URL        : según cómo lo expongas ↓
+$URL_LINE
 
 Exponer (elige UNO):
   • Tailscale (fácil): instala tailscale; URL = http://100.x.x.x:2586
@@ -118,10 +137,31 @@ Exponer (elige UNO):
 ────────────────────────────────────────────────────────────────────
 EOF
 
-# QR opcional (escanéalo con la cámara del iPhone → abre la app y la configura)
-if command -v qrencode >/dev/null 2>&1; then
-  echo "Escanea este QR con la cámara del iPhone:"
-  qrencode -t ANSIUTF8 "$DEEPLINK"
-else
-  echo "(Instala 'qrencode' para un QR escaneable:  brew install qrencode)"
+if [ -z "$SRV_URL" ]; then
+  cat <<'EOF'
+⚠️  Tailscale no detectado (vía fácil recomendada):
+    1. Instálalo:  brew install --cask tailscale   (o desde el App Store) y abre sesión
+    2. Re-ejecuta este instalador → el QR saldrá con la URL ya incluida
+EOF
+fi
+
+# QR (escanéalo con la cámara del iPhone → abre la app y la deja configurada)
+echo
+echo "Escanea este QR con la cámara del iPhone:"
+if ! $PY - "$DEEPLINK" <<'PYQ'
+import sys
+try:
+    import qrcode
+except Exception:
+    sys.exit(1)
+q = qrcode.QRCode(border=2)
+q.add_data(sys.argv[1])
+q.print_ascii(invert=True)
+PYQ
+then
+  if command -v qrencode >/dev/null 2>&1; then
+    qrencode -t ANSIUTF8 "$DEEPLINK"
+  else
+    echo "(QR no disponible — usa el código de arriba. Tip:  $PY -m pip install --user qrcode)"
+  fi
 fi
