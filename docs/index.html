@@ -229,6 +229,52 @@
     .footer-inner{ max-width:1000px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; }
     .footer-links{ display:flex; gap:20px; flex-wrap:wrap; }
 
+    /* ── Refinamiento nivel Apple ── */
+    ::selection{ background:rgba(41,151,255,0.35); color:#fff; }
+    :focus-visible{ outline:2px solid var(--blue); outline-offset:3px; border-radius:6px; }
+    h1, .section-title{ text-wrap:balance; }
+    .section-sub, .tagline{ text-wrap:pretty; }
+
+    /* nav que se compacta al deslizar */
+    .nav{ transition:padding .35s ease, background .35s ease; }
+    .nav.scrolled{ padding:9px 24px; background:rgba(8,8,10,0.85); }
+
+    /* h1 palabra a palabra */
+    .hero-copy h1{ animation:none; }
+    .hero h1 .w{ display:inline-block; opacity:0; transform:translateY(34px); }
+    @media (prefers-reduced-motion: no-preference){
+      .hero h1 .w{ animation:wordUp .75s cubic-bezier(.2,.7,.3,1) both; animation-delay:calc(.15s + var(--i)*0.075s); }
+    }
+    @media (prefers-reduced-motion: reduce){ .hero h1 .w{ opacity:1; transform:none; } }
+    @keyframes wordUp{ from{ opacity:0; transform:translateY(34px); } to{ opacity:1; transform:none; } }
+    .hero h1 .grad{ background:linear-gradient(92deg,var(--blue) 10%,var(--purple) 90%);
+      -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+
+    /* tarjetas: spotlight que sigue al cursor + elevación */
+    .card{ overflow:hidden; }
+    .card::after{ content:""; position:absolute; inset:0; opacity:0; transition:opacity .35s ease; pointer-events:none;
+      background:radial-gradient(220px circle at var(--mx,50%) var(--my,50%), rgba(41,151,255,0.12), transparent 70%); }
+    .card:hover::after{ opacity:1; }
+    .card::before{ content:""; position:absolute; top:0; left:24px; right:24px; height:1px;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent); }
+
+    /* halo cónico girando tras el iPhone del showcase */
+    @media (prefers-reduced-motion: no-preference){
+      .sc-phone::after{ content:""; position:absolute; width:130%; aspect-ratio:1; border-radius:50%;
+        background:conic-gradient(from 0deg, rgba(41,151,255,0.16), rgba(191,90,242,0.10), transparent 40%, rgba(41,151,255,0.16));
+        filter:blur(46px); animation:spin 16s linear infinite; pointer-events:none; z-index:-1; }
+      @keyframes spin{ to{ transform:rotate(360deg); } }
+    }
+
+    /* aurora lenta dentro de la caja de beta */
+    @media (prefers-reduced-motion: no-preference){
+      .beta-box::before{ animation:aurora 11s ease-in-out infinite alternate; }
+      @keyframes aurora{ from{ transform:translate(0,0) scale(1); } to{ transform:translate(60%,18%) scale(1.25); } }
+    }
+
+    /* cue de scroll que se desvanece */
+    .scroll-cue{ transition:opacity .4s ease; }
+
     /* ── Reveal por scroll (escalonado) ── */
     .reveal{ opacity:0; transform:translateY(30px); transition:opacity .8s cubic-bezier(.2,.7,.3,1), transform .8s cubic-bezier(.2,.7,.3,1); transition-delay:var(--d,0s); }
     .reveal.in{ opacity:1; transform:none; }
@@ -257,7 +303,7 @@
     <div class="hero-inner">
       <div class="hero-copy" data-hero-fade>
         <span class="eyebrow">🚀 Ahora en beta · TestFlight</span>
-        <h1>Tus servidores, en el bolsillo.</h1>
+        <h1><span class="w" style="--i:0">Tus</span> <span class="w" style="--i:1">servidores,</span> <span class="w" style="--i:2">en</span> <span class="w" style="--i:3">el</span> <span class="w grad" style="--i:4">bolsillo.</span></h1>
         <p class="tagline">Monitoriza, controla y recibe alertas de tus servidores <strong>Mac y Linux</strong> desde el iPhone. Self-hosted, privado y sin nube.</p>
         <div class="hero-ctas">
           <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb">🚀 Únete a la beta</a>
@@ -411,7 +457,7 @@
     <div class="hero-inner">
       <div class="hero-copy" data-hero-fade>
         <span class="eyebrow">🚀 Now in beta · TestFlight</span>
-        <h1>Your servers, in your pocket.</h1>
+        <h1><span class="w" style="--i:0">Your</span> <span class="w" style="--i:1">servers,</span> <span class="w" style="--i:2">in</span> <span class="w" style="--i:3">your</span> <span class="w grad" style="--i:4">pocket.</span></h1>
         <p class="tagline">Monitor, control and get alerts from your <strong>Mac and Linux</strong> servers on your iPhone. Self-hosted, private, no cloud.</p>
         <div class="hero-ctas">
           <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb">🚀 Join the beta</a>
@@ -613,6 +659,10 @@
     ticking=false;
     var y=window.scrollY, vh=window.innerHeight;
 
+    // nav compacta
+    var nav=document.querySelector('.nav');
+    if(nav) nav.classList.toggle('scrolled', y>28);
+
     // barra de progreso
     var p=document.querySelector('[data-progress]');
     if(p){
@@ -634,7 +684,12 @@
         hf.style.transform='translateY('+(-k*34)+'px)';
       }
       var hp=wrap.querySelector('.hero-phone .phone');
-      if(hp && !hp._tilting){ hp.style.transform='translateY('+(y*0.10)+'px)'; }
+      if(hp && !hp._tilting){
+        var hk=Math.min(1, y/(vh*0.9));
+        hp.style.transform='translateY('+(y*0.10)+'px) scale('+(1-hk*0.06)+')';
+      }
+      var cue=wrap.querySelector('.scroll-cue');
+      if(cue){ cue.style.opacity=String(Math.max(0, 1-y/(vh*0.25))); }
     }
 
     // parallax genérico
@@ -658,7 +713,8 @@
       var ph=w.querySelector('.sc-phone .phone');
       if(ph){
         var intra=prog*n-idx;
-        ph.style.transform='translateY('+((0.5-intra)*12)+'px)';
+        var wob=Math.sin(Math.PI*intra);
+        ph.style.transform='translateY('+((0.5-intra)*12)+'px) scale('+(0.985+wob*0.015)+')';
       }
     });
   }
@@ -676,6 +732,17 @@
       zone.addEventListener('mouseleave', function(){
         ph._tilting=false;
         ph.style.transform='translateY('+(window.scrollY*0.10)+'px)';
+      });
+    });
+  }
+
+  // spotlight de las tarjetas (solo puntero fino)
+  if(!reduced && window.matchMedia('(pointer: fine)').matches){
+    qsa('.card').forEach(function(c){
+      c.addEventListener('mousemove', function(e){
+        var r=c.getBoundingClientRect();
+        c.style.setProperty('--mx', ((e.clientX-r.left)/r.width*100)+'%');
+        c.style.setProperty('--my', ((e.clientY-r.top)/r.height*100)+'%');
       });
     });
   }
