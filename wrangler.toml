@@ -1,9 +1,10 @@
-# Cloudflare (Workers Static Assets) — sitio de Servward: servward.espymelab.com
-# Sirve la carpeta docs/ (landing + privacy + eula + testers) como sitio estático.
-# Se auto-despliega en cada push a main (Workers Builds · Connect to Git).
+# Cloudflare Worker + Static Assets — sitio de Servward (servward.espymelab.com).
+# Sirve docs/ como estático; worker.js añade Range (206) para los vídeos en /media/.
 name = "servward"
 compatibility_date = "2025-06-01"
+main = "worker.js"
 
 [assets]
 directory = "./docs"
+binding = "ASSETS"
 not_found_handling = "404-page"
