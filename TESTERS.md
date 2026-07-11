@@ -18,9 +18,10 @@ Current agent version / Versión actual del agente: **v1.7.0**
    ```
    curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash
    ```
-2. Connect the app using the **token** the installer prints, over **Tailscale**
+2. **Scan the QR** the installer prints with your iPhone camera — the app opens
+   pre-filled (with the URL included if the server runs Tailscale). Fallback:
+   paste the installer's code in Settings, over **Tailscale**
    (`http://100.x.x.x:2586`) or your **Cloudflare** domain (`https://…`).
-   You can also **scan the QR** to add a second server.
 
 ### 2. How to update your agent
 When a new app build ships, keep the server side in sync — two ways:
@@ -59,9 +60,10 @@ Send any bug, odd wording, or confusing install step via TestFlight feedback.
    ```
    curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash
    ```
-2. Conecta la app con el **token** que imprime el instalador, por **Tailscale**
+2. **Escanea el QR** que imprime el instalador con la cámara del iPhone — la app
+   se abre pre-rellenada (con la URL incluida si el servidor tiene Tailscale).
+   Alternativa: pega el código del instalador en Ajustes, por **Tailscale**
    (`http://100.x.x.x:2586`) o tu dominio **Cloudflare** (`https://…`).
-   También puedes **escanear el QR** para añadir un segundo servidor.
 
 ### 2. Cómo actualizar tu agente
 Cuando salga un build nuevo de la app, mantén el lado del servidor al día — dos vías:

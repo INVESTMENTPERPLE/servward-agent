@@ -173,7 +173,7 @@
       <h2 class="section-title">Instala el agente</h2>
       <p class="section-sub">Un solo comando en tu servidor, Mac o Linux. La pestaña <strong>Guía</strong> de la app te da este mismo comando y te acompaña.</p>
       <div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copiado ✓" onclick="copyCmd(this)">Copiar</button></div>
-      <p class="note">El instalador imprime un <strong>token</strong> al final. Cópialo: lo necesitas para conectar la app. Vuelve a ejecutar el mismo comando cuando quieras actualizar — conserva tu token y tus ajustes.</p>
+      <p class="note">Al final, el instalador imprime un <strong>QR</strong> y un <strong>código</strong>. Escanea el QR con la cámara del iPhone y la app queda configurada — con la <strong>URL incluida</strong> si el servidor ya tiene Tailscale. Re-ejecuta el mismo comando cuando quieras actualizar: conserva tu token y ajustes.</p>
     </div>
   </section>
 
@@ -182,8 +182,8 @@
       <p class="section-eyebrow">Paso 2</p>
       <h2 class="section-title">Conecta la app</h2>
       <div class="steps">
-        <div class="step"><h3>Añade el servidor</h3><p>Abre la app y pega la <strong>URL</strong>: por Tailscale <span class="inline-code">http://100.x.x.x:2586</span> o tu dominio Cloudflare <span class="inline-code">https://…</span>.</p></div>
-        <div class="step"><h3>Pega el token</h3><p>El que imprimió el instalador. Si prefieres, escanea el QR del servidor.</p></div>
+        <div class="step"><h3>Escanea el QR del instalador</h3><p>Apunta la <strong>cámara del iPhone</strong> al QR que salió en el terminal: se abre Servward con nombre, topics y token — y la <strong>URL ya incluida</strong> si el servidor tiene Tailscale. Confirma y listo.</p></div>
+        <div class="step"><h3>¿Sin QR? Pega el código</h3><p>Copia el código del instalador en <strong>Ajustes → «Pegar configuración»</strong>. Si falta la URL: por Tailscale <span class="inline-code">http://100.x.x.x:2586</span> o tu dominio Cloudflare <span class="inline-code">https://…</span>.</p></div>
         <div class="step"><h3>Permite notificaciones</h3><p>Acéptalas cuando la app lo pida — <strong>sin esto no recibirás las alertas de caída</strong>.</p></div>
         <div class="step"><h3>¿Segundo servidor?</h3><p>Escanea el <strong>QR</strong> desde el primero para añadirlo sin teclear nada.</p></div>
       </div>
@@ -317,7 +317,7 @@
       <h2 class="section-title">Install the agent</h2>
       <p class="section-sub">One command on your server, Mac or Linux. The app's <strong>Guide</strong> tab gives you this same command and walks you through it.</p>
       <div class="cmd"><code>curl -fsSL https://raw.githubusercontent.com/INVESTMENTPERPLE/servward-agent/main/install.sh | bash</code><button class="copy-btn" data-done="Copied ✓" onclick="copyCmd(this)">Copy</button></div>
-      <p class="note">The installer prints a <strong>token</strong> at the end. Copy it: you need it to connect the app. Re-run the same command anytime to update — it keeps your token and settings.</p>
+      <p class="note">At the end, the installer prints a <strong>QR</strong> and a <strong>code</strong>. Scan the QR with your iPhone camera and the app gets configured — with the <strong>URL included</strong> if the server already runs Tailscale. Re-run the same command anytime to update: it keeps your token and settings.</p>
     </div>
   </section>
 
@@ -326,8 +326,8 @@
       <p class="section-eyebrow">Step 2</p>
       <h2 class="section-title">Connect the app</h2>
       <div class="steps">
-        <div class="step"><h3>Add the server</h3><p>Open the app and paste the <strong>URL</strong>: over Tailscale <span class="inline-code">http://100.x.x.x:2586</span> or your Cloudflare domain <span class="inline-code">https://…</span>.</p></div>
-        <div class="step"><h3>Paste the token</h3><p>The one the installer printed. Or scan the server's QR instead.</p></div>
+        <div class="step"><h3>Scan the installer's QR</h3><p>Point your <strong>iPhone camera</strong> at the QR shown in the terminal: Servward opens with name, topics and token — and the <strong>URL already included</strong> if the server runs Tailscale. Confirm and you're in.</p></div>
+        <div class="step"><h3>No QR? Paste the code</h3><p>Copy the installer's code into <strong>Settings → "Paste configuration"</strong>. If the URL is missing: over Tailscale <span class="inline-code">http://100.x.x.x:2586</span> or your Cloudflare domain <span class="inline-code">https://…</span>.</p></div>
         <div class="step"><h3>Allow notifications</h3><p>Accept them when the app asks — <strong>without this you won't get down alerts</strong>.</p></div>
         <div class="step"><h3>Second server?</h3><p>Scan the <strong>QR</strong> from the first one to add it with zero typing.</p></div>
       </div>
