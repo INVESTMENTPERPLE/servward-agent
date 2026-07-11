@@ -168,6 +168,11 @@
     .beta-ctas{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
 
     .oss-box{ max-width:720px; margin:0 auto; text-align:center; }
+    .beta-qr{ display:flex; flex-direction:column; align-items:center; gap:10px; margin-top:30px; }
+    .beta-qr img{ width:150px; height:150px; border-radius:16px; background:#fff;
+      box-shadow:0 10px 34px rgba(0,0,0,0.45); }
+    .beta-qr span{ font-size:0.78rem; color:var(--muted); }
+    @media (max-width:600px){ .beta-qr{ display:none; } }
 
     footer{ border-top:1px solid var(--border); padding:36px 24px; text-align:center; font-size:0.82rem; color:var(--muted); }
     footer a{ color:var(--muted); }
@@ -311,6 +316,10 @@
           <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb">🚀 Únete a la beta</a>
           <a class="btn btn-secondary" href="/testers">📖 Guía de la beta</a>
         </div>
+        <div class="beta-qr">
+          <img src="img/qr-testflight.png" alt="QR para unirse a la beta de Servward en TestFlight" loading="lazy" />
+          <span>O escanéalo con la cámara del iPhone</span>
+        </div>
       </div>
     </div>
   </section>
@@ -432,6 +441,10 @@
         <div class="beta-ctas">
           <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb">🚀 Join the beta</a>
           <a class="btn btn-secondary" href="/testers">📖 Beta guide</a>
+        </div>
+        <div class="beta-qr">
+          <img src="img/qr-testflight.png" alt="QR to join the Servward beta on TestFlight" loading="lazy" />
+          <span>Or scan it with your iPhone camera</span>
         </div>
       </div>
     </div>
