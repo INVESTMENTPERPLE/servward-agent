@@ -73,7 +73,8 @@
     .btn-ghost:hover{ background:var(--hover); }
     .btn-lg{ padding:13px 24px; font-size:0.98rem; }
     @media (max-width:860px){ .nav-links{ display:none; } }
-    @media (max-width:520px){ .nav-cta-text{ display:none; } }
+    .nav-cta-icon{ display:none; }
+    @media (max-width:520px){ .nav-cta-text{ display:none; } .nav-cta-icon{ display:inline; } }
 
     .lang-wrap{ display:none; } .lang-wrap.active{ display:block; }
 
@@ -199,15 +200,15 @@
   <div class="nav-in">
     <a class="brand" href="/"><span>🖥</span> Servward</a>
     <nav class="nav-links" data-nav>
-      <a data-es href="#features">Funciones</a><a data-en href="#features" hidden>Features</a>
-      <a data-es href="#tour">La app</a><a data-en href="#tour" hidden>The app</a>
-      <a data-es href="#security">Seguridad</a><a data-en href="#security" hidden>Security</a>
-      <a data-es href="#faq">FAQ</a><a data-en href="#faq" hidden>FAQ</a>
+      <a data-es href="#features">Funciones</a><a data-en href="#features-en" hidden>Features</a>
+      <a data-es href="#tour">La app</a><a data-en href="#tour-en" hidden>The app</a>
+      <a data-es href="#security">Seguridad</a><a data-en href="#security-en" hidden>Security</a>
+      <a data-es href="#faq">FAQ</a><a data-en href="#faq-en" hidden>FAQ</a>
     </nav>
     <div class="nav-right">
       <button class="icon-btn" onclick="toggleTheme()" aria-label="Cambiar tema">🌙</button>
       <div class="lang"><button data-set="es" class="active" onclick="setLang('es')">ES</button><button data-set="en" onclick="setLang('en')">EN</button></div>
-      <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb"><span class="nav-cta-text" data-t>Únete a la beta</span><span style="display:none" class="nav-cta-icon">🚀</span></a>
+      <a class="btn btn-primary" href="https://testflight.apple.com/join/72CwpVGb"><span class="nav-cta-text" data-t>Únete a la beta</span><span class="nav-cta-icon">🚀</span></a>
     </div>
   </div>
 </header>
@@ -419,7 +420,7 @@
 <footer><div class="wrap">
   <div class="foot">
     <div class="foot-brand"><a class="brand" href="/"><span>🖥</span> Servward</a><p data-es>Controla tus servidores Mac y Linux desde el iPhone. Self-hosted y open source.</p><p data-en hidden>Control your Mac and Linux servers from your iPhone. Self-hosted and open source.</p></div>
-    <div><h5 data-es>Producto</h5><h5 data-en hidden>Product</h5><a href="#features" data-es>Funciones</a><a href="#features" data-en hidden>Features</a><a href="#tour" data-es>La app</a><a href="#tour" data-en hidden>The app</a><a href="#security" data-es>Seguridad</a><a href="#security" data-en hidden>Security</a></div>
+    <div><h5 data-es>Producto</h5><h5 data-en hidden>Product</h5><a href="#features" data-es>Funciones</a><a href="#features-en" data-en hidden>Features</a><a href="#tour" data-es>La app</a><a href="#tour-en" data-en hidden>The app</a><a href="#security" data-es>Seguridad</a><a href="#security-en" data-en hidden>Security</a></div>
     <div><h5 data-es>Recursos</h5><h5 data-en hidden>Resources</h5><a href="/testers" data-es>Guía de la beta</a><a href="/testers" data-en hidden>Beta guide</a><a href="https://github.com/INVESTMENTPERPLE/servward-agent">GitHub</a><a href="https://testflight.apple.com/join/72CwpVGb">TestFlight</a></div>
     <div><h5>Legal</h5><a href="/privacy" data-es>Privacidad</a><a href="/privacy" data-en hidden>Privacy</a><a href="/eula" data-es>Términos</a><a href="/eula" data-en hidden>Terms</a></div>
   </div>
