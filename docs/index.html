@@ -196,6 +196,9 @@
     .sc-dots i.on{ background:var(--blue); }
     .sc-phone{ display:flex; justify-content:center; position:relative; }
     .sc-phone::before{ content:""; position:absolute; inset:-12% -10%; border-radius:50%; background:radial-gradient(circle at 50% 45%, var(--glow-2), transparent 60%); pointer-events:none; }
+    .sc-phone .shots{ position:relative; width:100%; border-radius:40px; overflow:hidden; aspect-ratio:1206/2622; background:#000; }
+    .sc-phone .shots img{ position:absolute; inset:0; width:100%; opacity:0; transition:opacity .5s var(--ease); }
+    .sc-phone .shots img.on{ opacity:1; }
     /* modo estático (móvil / reduced-motion): sin pin, vídeo en bucle, textos apilados */
     .sc-track.sc-static{ height:auto; }
     .sc-track.sc-static .sc-sticky{ position:static; height:auto; padding:60px 0; }
@@ -371,14 +374,17 @@
           <div class="sc-item on"><h3>⚡ Control en vivo</h3><p>CPU, RAM y disco al segundo, servicios, scripts y tus comandos — con el agente v1.7.0 en línea.</p></div>
           <div class="sc-item"><h3>📈 Métricas con histórico</h3><p>Evolución real de CPU, RAM y disco: 240 muestras, una por minuto, con media y máximos.</p></div>
           <div class="sc-item"><h3>❤️ Salud del servidor</h3><p>Puntuación 0-100, certificados TLS, endpoints y SMART de discos. Un vistazo y lo sabes todo.</p></div>
-          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+          <div class="sc-item"><h3>⬆️ Actualizaciones del sistema</h3><p>Homebrew en Mac, apt en Linux: ve los paquetes pendientes e instálalos con un toque, sin abrir el terminal.</p></div>
+          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
         </div>
         <div class="sc-phone">
           <div class="phone">
-            <video class="scrub-video" muted playsinline preload="auto" poster="img/hero-poster.jpg" aria-label="Recorrido de Servward: Control, Métricas y Salud">
-              <source src="/media/hero.mp4" type="video/mp4" />
-              <img src="img/app-control-es.png" alt="Recorrido de Servward" />
-            </video>
+            <div class="shots">
+              <img class="on" src="img/app-control-es.png" alt="Servward: Control" loading="lazy" />
+              <img src="img/app-metrics.png" alt="Servward: Métricas" loading="lazy" />
+              <img src="img/app-health.png" alt="Servward: Salud" loading="lazy" />
+              <img src="img/app-updates.png" alt="Servward: Actualizaciones" loading="lazy" />
+            </div>
           </div>
         </div>
       </div>
@@ -515,14 +521,17 @@
           <div class="sc-item on"><h3>⚡ Live control</h3><p>CPU, RAM and disk by the second, services, scripts and your commands — agent v1.7.0 online.</p></div>
           <div class="sc-item"><h3>📈 Metrics with history</h3><p>Real CPU, RAM and disk over time: 240 samples, one per minute, with average and peaks.</p></div>
           <div class="sc-item"><h3>❤️ Server health</h3><p>0-100 score, TLS certificates, endpoints and disk SMART. One glance and you know it all.</p></div>
-          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i></div>
+          <div class="sc-item"><h3>⬆️ System updates</h3><p>Homebrew on Mac, apt on Linux: see pending packages and install them with one tap, no terminal.</p></div>
+          <div class="sc-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
         </div>
         <div class="sc-phone">
           <div class="phone">
-            <video class="scrub-video" muted playsinline preload="auto" poster="img/hero-en-poster.jpg" aria-label="Servward walkthrough: Control, Metrics and Health">
-              <source src="/media/hero-en.mp4" type="video/mp4" />
-              <img src="img/app-control-en.png" alt="Servward walkthrough" />
-            </video>
+            <div class="shots">
+              <img class="on" src="img/app-control-en.png" alt="Servward: Control" loading="lazy" />
+              <img src="img/app-metrics.png" alt="Servward: Metrics" loading="lazy" />
+              <img src="img/app-health.png" alt="Servward: Health" loading="lazy" />
+              <img src="img/app-updates.png" alt="Servward: Updates" loading="lazy" />
+            </div>
           </div>
         </div>
       </div>
@@ -678,22 +687,9 @@
   function countScan(){ qsa('.lang-wrap.active [data-count]').forEach(function(el){ countObs.observe(el); }); }
 
   // ── Scrub de vídeo por scroll (solo desktop capaz). Móvil/reduced → bucle. ──
-  var canScrub = !reduced && fine && window.innerWidth > 820;
   function setupScrub(){
-    qsa('.lang-wrap.active [data-scrub]').forEach(function(track){
-      var v = track.querySelector('.scrub-video');
-      if(!v) return;
-      if(canScrub){
-        track.classList.remove('sc-static');
-        v.removeAttribute('autoplay'); v.loop=false; v.pause();
-        v.setAttribute('preload','auto');
-        v._scrub = true;
-      } else {
-        track.classList.add('sc-static');
-        v.setAttribute('autoplay',''); v.loop=true; v._scrub=false;
-        var p=v.play(); if(p&&p.catch) p.catch(function(){});
-      }
-    });
+    // Cambio de capturas por scroll (fiable en todo navegador). Estático solo si reduced-motion.
+    qsa('.lang-wrap.active [data-scrub]').forEach(function(track){ track.classList.toggle('sc-static', reduced); });
   }
 
   var ticking=false;
@@ -723,15 +719,13 @@
     qsa('[data-scrub]', wrap).forEach(function(w){
       var r=w.getBoundingClientRect(), total=r.height - vh; if(total<=0) return;
       var prog=clamp(-r.top/total, 0, 1);
-      var items=qsa('.sc-item', w), dots=qsa('.sc-dots i', w), n=items.length;
+      var items=qsa('.sc-item', w), imgs=qsa('.shots img', w), dots=qsa('.sc-dots i', w), n=items.length;
       var idx=Math.min(n-1, Math.floor(prog*n));
       items.forEach(function(el,i){ el.classList.toggle('on', i===idx); });
+      imgs.forEach(function(el,i){ el.classList.toggle('on', i===idx); });
       dots.forEach(function(el,i){ el.classList.toggle('on', i===idx); });
-      var v=w.querySelector('.scrub-video');
-      if(v && v._scrub && v.readyState>=1 && v.duration){
-        var t=prog*(v.duration-0.05);
-        if(Math.abs((v.currentTime||0)-t) > 0.03){ try{ v.currentTime=t; }catch(e){} }
-      }
+      var ph=w.querySelector('.sc-phone .phone');
+      if(ph){ var intra=prog*n-idx, wob=Math.sin(Math.PI*intra); ph.style.transform='translateY('+((0.5-intra)*12)+'px) scale('+(0.985+wob*0.015)+')'; }
     });
   }
 
@@ -758,7 +752,7 @@
   }
 
   window.addEventListener('scroll', onScroll, {passive:true});
-  window.addEventListener('resize', function(){ canScrub = !reduced && fine && window.innerWidth > 820; setupScrub(); onScroll(); }, {passive:true});
+  window.addEventListener('resize', function(){ setupScrub(); onScroll(); }, {passive:true});
   setupScrub(); revealScan(); countScan(); update();
   (function(){ var n=(navigator.language||'es').toLowerCase(); if(n.indexOf('es')!==0) window.setLang('en'); })();
 })();
