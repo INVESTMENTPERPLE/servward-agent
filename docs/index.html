@@ -210,6 +210,22 @@
     .foot-brand p{ color:var(--muted); font-size:0.9rem; max-width:30ch; margin-top:12px; }
     .foot-bottom{ margin-top:44px; padding-top:24px; border-top:1px solid var(--border); display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; font-size:0.85rem; color:var(--muted); }
 
+    /* Compactación móvil: menos aire vertical en pantallas pequeñas */
+    @media (max-width:640px){
+      section{ padding:60px 0; }
+      .sec-head{ margin-bottom:38px; }
+      .hero{ padding:56px 0 0; }
+      .hero-shot{ margin-top:38px; }
+      .hero-stage{ padding:28px 16px 0; }
+      .trust{ margin-top:52px; padding:34px 0; }
+      .trust-row{ gap:10px 26px; }
+      .row{ padding:30px 0; }
+      .cta-card{ padding:46px 22px; border-radius:18px; }
+      footer{ padding:42px 0 30px; }
+      .foot-bottom{ margin-top:32px; }
+      h1{ font-size:clamp(2.15rem,9vw,2.6rem); }
+    }
+
     .reveal{ opacity:0; transform:translateY(10px); transition:opacity .5s var(--ease), transform .5s var(--ease); transition-delay:var(--d,0s); }
     .reveal.in{ opacity:1; transform:none; }
     @media (prefers-reduced-motion: reduce){ .reveal{ opacity:1; transform:none; transition:none; } }
