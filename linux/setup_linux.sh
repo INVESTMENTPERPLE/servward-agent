@@ -44,7 +44,7 @@ install -o ntfy -g ntfy -m 644 "$SERVER_PY" /opt/ntfy/server.py
 echo "==> 4/6  Archivo de entorno en /etc/ntfy/ntfy.env"
 install -d -m 750 /etc/ntfy
 if [[ ! -f /etc/ntfy/ntfy.env ]]; then
-  install -m 600 "$SCRIPT_DIR/ntfy.env" /etc/ntfy/ntfy.env
+  install -m 600 "$SCRIPT_DIR/ntfy.env.example" /etc/ntfy/ntfy.env
   echo "    -> Creado. EDÍTALO y pon tu NTFY_TOKEN:  sudo nano /etc/ntfy/ntfy.env"
 else
   echo "    -> Ya existe, no lo toco."
