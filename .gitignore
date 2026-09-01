@@ -1,5 +1,7 @@
 # Credenciales y claves — NUNCA subir
 .ntfy_token
+*.env
+!*.env.example
 *.pem
 *.cer
 *.p8
