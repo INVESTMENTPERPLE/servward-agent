@@ -1875,6 +1875,90 @@ def cmd_claude_hooks_install(args: dict) -> dict:
     log.info("CLAUDE_HOOKS %s", "removed" if args.get("remove") else "installed")
     return {"ok": "1", "hooks": "1" if _claude_hooks_installed() else "0", "settings": path}
 
+# ── Live Activity (Dynamic Island) de la sesión que el móvil estaba usando ──────
+# La app, al irse a segundo plano, arranca una Live Activity de esa sesión y registra
+# aquí su token de push (claude_live_register). Cada evento del hook la actualiza por
+# APNs (push-type liveactivity) con un semáforo: working (rojo, pensando),
+# needs_you (amarillo, espera respuesta), done (verde, ha acabado). SessionEnd la cierra.
+CLAUDE_LIVE_FILE = os.path.join(SERVWARD_DIR, "live-activities.json")
+_CLAUDE_LIVE_LOCK = threading.Lock()
+_LIVE_TOKEN_RE = re.compile(r"^[0-9a-fA-F]{32,200}$")
+
+def _live_load() -> dict:
+    d = _read_json_file(CLAUDE_LIVE_FILE)
+    return d if isinstance(d, dict) else {}
+
+def _live_save(d: dict):
+    os.makedirs(SERVWARD_DIR, exist_ok=True)
+    tmp = CLAUDE_LIVE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, CLAUDE_LIVE_FILE)
+
+def cmd_claude_live_register(args: dict) -> dict:
+    """Registra el token de la Live Activity de una sesión (session_id, token, name)."""
+    sid = str(args.get("session_id") or "").strip()
+    token = str(args.get("token") or "").strip()
+    if not sid or not _LIVE_TOKEN_RE.match(token):
+        return {"error": "faltan session_id o token"}
+    with _CLAUDE_LIVE_LOCK:
+        d = _live_load()
+        d[sid] = {"token": token, "name": str(args.get("name") or "")[:80], "ts": int(time.time())}
+        # Como mucho 20 registros; fuera los más viejos.
+        for old in sorted(d, key=lambda k: d[k].get("ts", 0))[:-20]:
+            d.pop(old, None)
+        _live_save(d)
+    log.info("LIVE_REGISTER session=%s", sid[:8])
+    return {"ok": "1", "count": str(len(d))}
+
+def cmd_claude_live_unregister(args: dict) -> dict:
+    sid = str(args.get("session_id") or "").strip()
+    with _CLAUDE_LIVE_LOCK:
+        d = _live_load()
+        removed = d.pop(sid, None) is not None
+        _live_save(d)
+    return {"ok": "1", "removed": "1" if removed else "0"}
+
+def send_live_activity(token: str, state: str, detail: str, name: str,
+                       end: bool = False, alert: Optional[tuple] = None) -> bool:
+    """Actualiza (o cierra) una Live Activity por APNs. Devuelve True si APNs aceptó."""
+    if not os.path.isfile(APNS_CERT) or not os.path.isfile(APNS_KEY):
+        return False
+    aps = {"timestamp": int(time.time()), "event": "end" if end else "update",
+           "content-state": {"state": state, "detail": detail[:160], "updatedAt": time.time()}}
+    if end:
+        aps["dismissal-date"] = int(time.time()) + 600
+    if alert:
+        aps["alert"] = {"title": alert[0], "body": alert[1]}
+    cmd = ["curl", "--http2", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+           "--cert", APNS_CERT, "--key", APNS_KEY,
+           "-H", f"apns-topic: {APNS_BUNDLE}.push-type.liveactivity",
+           "-H", "apns-push-type: liveactivity", "-H", "apns-priority: 10",
+           "-d", json.dumps({"aps": aps}), f"https://{APNS_HOST}/3/device/{token}"]
+    try:
+        code = subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout.strip()
+    except Exception as e:
+        log.error("LIVE_ERROR %s", e)
+        return False
+    if code == "200":
+        log.info("LIVE_SENT  state=%s  name=%r%s", state, name, " (end)" if end else "")
+        return True
+    log.warning("LIVE_FAIL  http=%s  state=%s", code, state)
+    return code not in ("400", "410")
+
+def _live_update(sid: str, state: str, detail: str, end: bool = False, alert: Optional[tuple] = None):
+    with _CLAUDE_LIVE_LOCK:
+        d = _live_load()
+        entry = d.get(sid)
+    if not entry:
+        return
+    ok = send_live_activity(entry["token"], state, detail, entry.get("name", ""), end=end, alert=alert)
+    if end or not ok:
+        with _CLAUDE_LIVE_LOCK:
+            d = _live_load()
+            d.pop(sid, None)
+            _live_save(d)
+
 def _claude_session_label(session_id: str, cwd: str) -> str:
     info = _claude_find(session_id) if session_id else None
     if info and info.get("name"):
@@ -1896,6 +1980,17 @@ def _claude_handle_event(rec: dict):
     name = str(ev.get("hook_event_name") or "")
     sid  = str(ev.get("session_id") or "")
     cwd  = str(ev.get("cwd") or "")
+    # 1) Live Activity de la sesión que el móvil está siguiendo (siempre, aunque el push
+    #    de avisos esté silenciado: la pidió el propio móvil).
+    if name == "UserPromptSubmit":
+        _live_update(sid, "working", str(ev.get("prompt") or "")[:160])
+    elif name == "Notification" and str(ev.get("notification_type") or "") in _NEEDS_YOU_TYPES:
+        _live_update(sid, "needs_you", str(ev.get("message") or "Espera tu respuesta"))
+    elif name == "Stop":
+        _live_update(sid, "done", _claude_last_answer(str(ev.get("transcript_path") or "")) or "Ha acabado")
+    elif name == "SessionEnd":
+        _live_update(sid, "done", "Sesión cerrada", end=True)
+    # 2) Avisos push
     if not _claude_push_enabled():
         return
     if name == "Notification":
@@ -2017,6 +2112,8 @@ COMMAND_MAP = {
     "claude_start":      cmd_claude_start,
     "claude_push":       cmd_claude_push,
     "claude_hooks_install": cmd_claude_hooks_install,
+    "claude_live_register":   cmd_claude_live_register,     # Live Activity (Dynamic Island)
+    "claude_live_unregister": cmd_claude_live_unregister,
     # Terminales tmux (el terminal del móvil; teclear/crear/cerrar exigen ALLOW_CLAUDE_CONTROL=1)
     "tmux_sessions":     cmd_tmux_sessions,
     "tmux_screen":       cmd_tmux_screen,
