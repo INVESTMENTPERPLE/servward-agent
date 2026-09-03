@@ -13,6 +13,8 @@ Config por variables de entorno:
     NTFY_RESP_TOPIC   topic de respuestas    (def: resp-linux-prod)
     NTFY_DEVICE_NAME  nombre informativo     (def: hostname)
     ALLOW_POWER       "1" para permitir reboot/poweroff (def: desactivado)
+    ALLOW_CLAUDE_CONTROL "1" para responder/parar/arrancar sesiones de Claude Code
+                      (def: desactivado; NUNCA en un nodo de producción)
     SCRIPTS_DIR       carpeta de scripts permitidos (def: /opt/ntfy/scripts)
 """
 
@@ -26,11 +28,13 @@ import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
 import urllib.error
 from collections import deque
+from datetime import datetime, timezone
 
 try:
     import psutil
@@ -892,6 +896,318 @@ def cmd_claude_sessions(_args: dict) -> dict:
         "sessions": json.dumps(out, ensure_ascii=False),
     }
 
+# ── Conversación y control de sesiones de Claude Code ────────────────────────
+# claude_transcript LEE la conversación de una sesión (~/.claude/projects/*/<id>.jsonl).
+# claude_reply / claude_stop / claude_start CONTROLAN sesiones con el CLI `claude`:
+# solo funcionan si el nodo arranca con ALLOW_CLAUDE_CONTROL=1 (nunca en producción).
+# Mecanismo verificado (3-sep-2026): `claude stop <job>` y después
+# `claude --bg --resume <sessionId> "<texto>"` continúa la MISMA sesión; sin el stop
+# previo, `--resume` de una sesión viva arranca una copia. `stop` toma el id corto del
+# trabajo y `--resume` el sessionId completo (pueden no coincidir).
+ALLOW_CLAUDE_CONTROL = os.environ.get("ALLOW_CLAUDE_CONTROL", "0").strip() == "1"
+CLAUDE_BIN            = os.environ.get("CLAUDE_BIN", "").strip()
+CLAUDE_START_FLAGS    = os.environ.get("CLAUDE_START_FLAGS", "--permission-mode auto").split()
+CLAUDE_TAIL_BYTES     = int(os.environ.get("CLAUDE_TAIL_BYTES", str(6 * 1024 * 1024)))
+CLAUDE_TEXT_MAX       = 20_000     # caracteres máximos de un mensaje enviado desde la app
+_CLAUDE_BG_ID_RE      = re.compile(r"·\s*([0-9a-f]{8})\b")
+_CLAUDE_REMINDER_RE   = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+
+def _claude_bin() -> str:
+    if CLAUDE_BIN and os.access(CLAUDE_BIN, os.X_OK):
+        return CLAUDE_BIN
+    extra = os.pathsep.join([os.path.expanduser("~/.local/bin"), "/opt/homebrew/bin",
+                             "/usr/local/bin", os.environ.get("PATH", "")])
+    return shutil.which("claude", path=extra) or ""
+
+def _claude_control_blocked():
+    """Motivo por el que no se puede controlar sesiones en este nodo, o None."""
+    if not ALLOW_CLAUDE_CONTROL:
+        return {"bloqueado": "control de sesiones desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if not _claude_bin():
+        return {"error": "no encuentro el CLI `claude` en esta máquina (CLAUDE_BIN)"}
+    return None
+
+def _claude_find(ident: str):
+    """Localiza una sesión por sessionId, id corto de trabajo o PID. Devuelve dict con
+    session_id, job_id, kind, cwd, pid (0 si no vive) y name; o None si no existe."""
+    ident = str(ident or "").strip()
+    if not ident:
+        return None
+    found = None
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        if ident in (str(d.get("sessionId")), str(d.get("jobId")), str(d.get("pid"))):
+            alive = _pid_alive(d.get("pid"))
+            found = {"session_id": str(d.get("sessionId") or ""), "job_id": str(d.get("jobId") or ""),
+                     "kind": "bg" if d.get("kind") == "bg" else "interactive",
+                     "cwd": str(d.get("cwd") or ""), "pid": int(d.get("pid") or 0) if alive else 0,
+                     "name": str(d.get("name") or "")}
+            if alive:
+                return found
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "jobs", "*", "state.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        job_id = os.path.basename(os.path.dirname(path))
+        sid = str(d.get("resumeSessionId") or d.get("sessionId") or "")
+        if ident in (job_id, sid):
+            return {"session_id": sid, "job_id": job_id, "kind": "bg",
+                    "cwd": str(d.get("cwd") or ""), "pid": found["pid"] if found else 0,
+                    "name": str(d.get("name") or job_id)}
+    if found is None:
+        # Sin ficha viva ni trabajo: puede ser un sessionId cuyo transcript aún existe.
+        if _claude_transcript_path(ident):
+            found = {"session_id": ident, "job_id": "", "kind": "bg", "cwd": "", "pid": 0, "name": ident}
+    return found
+
+def _claude_transcript_path(session_id: str) -> str:
+    if not re.fullmatch(r"[0-9a-fA-F-]{8,64}", session_id or ""):
+        return ""
+    hits = glob.glob(os.path.join(CLAUDE_DIR, "projects", "*", f"{session_id}.jsonl"))
+    if not hits:
+        return ""
+    return max(hits, key=lambda p: os.path.getmtime(p))
+
+def _tail_lines(path: str, max_bytes: int):
+    """Últimas líneas completas de un fichero grande sin leerlo entero.
+    Devuelve (líneas, truncado)."""
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        if size > max_bytes:
+            f.seek(size - max_bytes)
+            data = f.read()
+            data = data[data.find(b"\n") + 1:]        # descarta la línea partida
+            truncated = True
+        else:
+            data = f.read()
+            truncated = False
+    return data.decode("utf-8", "replace").splitlines(), truncated
+
+def _iso_to_ms(s) -> int:
+    """Los timestamps del transcript son UTC ('…Z'); se devuelven en ms de época."""
+    try:
+        dt = datetime.strptime(str(s)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+    except (TypeError, ValueError):
+        return 0
+
+def _claude_tool_summary(block: dict) -> str:
+    name = str(block.get("name") or "herramienta")
+    inp = block.get("input") or {}
+    if not isinstance(inp, dict):
+        return name
+    for key in ("description", "command", "file_path", "pattern", "prompt", "query", "skill"):
+        v = inp.get(key)
+        if isinstance(v, str) and v.strip():
+            return f"{name}: {v.strip().splitlines()[0][:160]}"
+    return name
+
+def _claude_messages(lines, max_chars: int) -> list:
+    """Convierte líneas del jsonl en mensajes legibles: lo que dijo la persona, lo que
+    contestó Claude y qué herramientas usó. Fuera: pensamiento, resultados de
+    herramientas, mensajes internos (skills, recordatorios) y subagentes."""
+    out = []
+    for line in lines:
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        typ = d.get("type")
+        if typ not in ("user", "assistant") or d.get("isSidechain"):
+            continue
+        msg = d.get("message") or {}
+        content = msg.get("content")
+        ts = _iso_to_ms(d.get("timestamp"))
+        uid = str(d.get("uuid") or "")
+        if typ == "user":
+            if d.get("isMeta"):
+                continue
+            if isinstance(content, str):
+                text = content
+            elif isinstance(content, list):
+                if any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+                    continue
+                text = "\n".join(str(b.get("text") or "") for b in content
+                                 if isinstance(b, dict) and b.get("type") == "text")
+            else:
+                continue
+            text = _CLAUDE_REMINDER_RE.sub("", text).strip()
+            if not text or text.startswith("<"):
+                continue
+            out.append({"id": uid, "role": "user", "kind": "text", "text": text[:max_chars], "ts_ms": ts})
+            continue
+        if not isinstance(content, list):
+            continue
+        texts = []
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "text" and str(b.get("text") or "").strip():
+                texts.append(str(b["text"]).strip())
+            elif b.get("type") == "tool_use":
+                out.append({"id": uid + ":" + str(b.get("id") or ""), "role": "assistant", "kind": "tool",
+                            "text": _claude_tool_summary(b), "ts_ms": ts})
+        if texts:
+            out.append({"id": uid, "role": "assistant", "kind": "text",
+                        "text": "\n\n".join(texts)[:max_chars], "ts_ms": ts})
+    return out
+
+def cmd_claude_transcript(args: dict) -> dict:
+    """Conversación de una sesión (las últimas `limit` entradas), como JSON en 'messages'."""
+    ident = str(args.get("id") or "").strip()
+    if not ident:
+        return {"error": "falta 'id' (sessionId o id del trabajo)"}
+    try:
+        limit = max(1, min(int(args.get("limit") or 40), 200))
+        max_chars = max(200, min(int(args.get("max_chars") or 2500), 20_000))
+    except (TypeError, ValueError):
+        return {"error": "'limit' y 'max_chars' deben ser números"}
+    info = _claude_find(ident)
+    if info is None:
+        return {"error": f"no hay ninguna sesión '{ident[:24]}' en esta máquina"}
+    path = _claude_transcript_path(info["session_id"])
+    if not path:
+        return {"error": "esta sesión no tiene transcript en disco todavía"}
+    lines, truncated = _tail_lines(path, CLAUDE_TAIL_BYTES)
+    msgs = _claude_messages(lines, max_chars)
+    total = len(msgs)
+    msgs = msgs[-limit:]
+    state = "unknown"
+    for s in json.loads(cmd_claude_sessions({}).get("sessions") or "[]"):
+        if s["id"] == info["session_id"] or (info["job_id"] and s["job_id"] == info["job_id"]):
+            state = s["state"]
+            break
+    return {
+        "id":        info["session_id"],
+        "job_id":    info["job_id"],
+        "name":      info["name"],
+        "kind":      info["kind"],
+        "cwd":       info["cwd"],
+        "state":     state,
+        "alive":     "1" if info["pid"] else "0",
+        "control":   "1" if ALLOW_CLAUDE_CONTROL else "0",
+        "count":     str(len(msgs)),
+        "total":     str(total),
+        "truncated": "1" if (truncated or total > limit) else "0",
+        "messages":  json.dumps(msgs, ensure_ascii=False),
+    }
+
+def _claude_run(argv: list, cwd: str, timeout: int = 90) -> tuple:
+    """Ejecuta el CLI `claude` sin shell (los textos van como argumentos, nunca se
+    interpolan). stdout/stderr van a fichero para que el demonio que deja detrás
+    `--bg` no mantenga una tubería abierta y bloquee la espera."""
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([os.path.dirname(_claude_bin()), env.get("PATH", "")])
+    env.setdefault("HOME", os.path.expanduser("~"))
+    if not (cwd and os.path.isdir(cwd)):
+        cwd = os.path.expanduser("~")
+    with tempfile.TemporaryFile() as out:
+        try:
+            rc = subprocess.run([_claude_bin()] + argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                stdout=out, stderr=subprocess.STDOUT, timeout=timeout).returncode
+        except subprocess.TimeoutExpired:
+            rc = -1
+        out.seek(0)
+        text = out.read().decode("utf-8", "replace").strip()
+    return rc, text
+
+def _claude_wait_gone(pid: int, seconds: float) -> bool:
+    end = time.time() + seconds
+    while time.time() < end:
+        if not pid or not _pid_alive(pid):
+            return True
+        time.sleep(0.3)
+    return not _pid_alive(pid)
+
+def _claude_stop_job(info: dict) -> dict:
+    """`claude stop <job>` y espera a que el proceso muera. Devuelve {'ok':...} o {'error':...}."""
+    if not info["job_id"]:
+        return {"error": "solo se pueden parar sesiones en segundo plano (esta no tiene id de trabajo)"}
+    rc, text = _claude_run(["stop", info["job_id"]], info["cwd"], timeout=60)
+    if rc != 0:
+        return {"error": f"claude stop devolvió {rc}: {text[:300]}"}
+    if not _claude_wait_gone(info["pid"], 20):
+        return {"error": f"claude stop no ha terminado el proceso {info['pid']} en 20 s"}
+    return {"ok": "1", "output": text[:300]}
+
+def cmd_claude_stop(args: dict) -> dict:
+    """Para una sesión en segundo plano (la conversación se conserva)."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    info = _claude_find(str(args.get("id") or ""))
+    if info is None:
+        return {"error": "sesión no encontrada"}
+    if info["kind"] == "interactive" and info["pid"]:
+        return {"error": "es una sesión interactiva en un terminal: se cierra desde allí"}
+    if not info["pid"]:
+        return {"ok": "1", "info": "la sesión ya no estaba en marcha", "job_id": info["job_id"]}
+    log.info("CLAUDE_STOP job=%s session=%s", info["job_id"], info["session_id"][:8])
+    res = _claude_stop_job(info)
+    res.setdefault("job_id", info["job_id"])
+    return res
+
+def cmd_claude_reply(args: dict) -> dict:
+    """Manda un mensaje a una sesión existente: la para si sigue viva y la continúa en
+    segundo plano con `--resume` (misma conversación, mismo id)."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    text = str(args.get("text") or "").strip()
+    if not text:
+        return {"error": "falta 'text'"}
+    if len(text) > CLAUDE_TEXT_MAX:
+        return {"error": f"mensaje demasiado largo (máximo {CLAUDE_TEXT_MAX} caracteres)"}
+    info = _claude_find(str(args.get("id") or ""))
+    if info is None or not info["session_id"]:
+        return {"error": "sesión no encontrada"}
+    if info["kind"] == "interactive" and info["pid"]:
+        return {"error": "es una sesión interactiva en un terminal: `--resume` abriría una copia. Respóndele allí"}
+    if info["pid"]:
+        stopped = _claude_stop_job(info)
+        if "error" in stopped:
+            return stopped
+    log.info("CLAUDE_REPLY session=%s chars=%d", info["session_id"][:8], len(text))
+    rc, out = _claude_run(["--bg", "--resume", info["session_id"], text], info["cwd"], timeout=120)
+    m = _CLAUDE_BG_ID_RE.search(out)
+    if rc != 0 or not m:
+        return {"error": f"claude --resume devolvió {rc}: {out[:300] or 'sin salida'}"}
+    return {"ok": "1", "id": info["session_id"], "job_id": m.group(1), "output": out.splitlines()[0][:200]}
+
+def cmd_claude_start(args: dict) -> dict:
+    """Arranca una sesión nueva en segundo plano con una tarea (`claude --bg "<texto>"`)."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    text = str(args.get("text") or "").strip()
+    if not text:
+        return {"error": "falta 'text' (la tarea)"}
+    if len(text) > CLAUDE_TEXT_MAX:
+        return {"error": f"tarea demasiado larga (máximo {CLAUDE_TEXT_MAX} caracteres)"}
+    cwd = os.path.expanduser(str(args.get("cwd") or "").strip()) or os.path.expanduser("~")
+    if not os.path.isdir(cwd):
+        return {"error": f"la carpeta no existe: {cwd[:120]}"}
+    name = str(args.get("name") or "").strip()[:80]
+    argv = ["--bg"] + CLAUDE_START_FLAGS + (["-n", name] if name else []) + [text]
+    log.info("CLAUDE_START cwd=%s name=%r chars=%d", cwd, name, len(text))
+    rc, out = _claude_run(argv, cwd, timeout=120)
+    m = _CLAUDE_BG_ID_RE.search(out)
+    if rc != 0 or not m:
+        return {"error": f"claude --bg devolvió {rc}: {out[:300] or 'sin salida'}"}
+    job_id = m.group(1)
+    # El sessionId de la sesión nueva sale en su ficha en cuanto arranca.
+    session_id = ""
+    for _ in range(20):
+        found = _claude_find(job_id)
+        if found and found["session_id"]:
+            session_id = found["session_id"]
+            break
+        time.sleep(0.25)
+    return {"ok": "1", "id": session_id or job_id, "job_id": job_id, "cwd": cwd,
+            "output": out.splitlines()[0][:200]}
+
 # Comandos permitidos con un token de SOLO LECTURA (monitorización).
 # Default-deny: cualquier cmd fuera de este set se rechaza si scope == "ro".
 ALLOWED_RO = {
@@ -946,7 +1262,11 @@ COMMAND_MAP = {
     "check_endpoints": cmd_check_endpoints,
     "smart":           cmd_smart,
     # Sesiones de Claude Code
-    "claude_sessions": cmd_claude_sessions,
+    "claude_sessions":   cmd_claude_sessions,
+    "claude_transcript": cmd_claude_transcript,   # lectura
+    "claude_reply":      cmd_claude_reply,        # control: exige ALLOW_CLAUDE_CONTROL=1
+    "claude_stop":       cmd_claude_stop,
+    "claude_start":      cmd_claude_start,
 }
 
 # ── Publicar respuesta ──────────────────────────────────────────────────────
