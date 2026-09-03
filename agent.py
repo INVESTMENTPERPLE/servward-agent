@@ -1875,6 +1875,92 @@ def cmd_claude_hooks_install(args: dict) -> dict:
     log.info("CLAUDE_HOOKS %s", "removed" if args.get("remove") else "installed")
     return {"ok": "1", "hooks": "1" if _claude_hooks_installed() else "0", "settings": path}
 
+# ── Uso de la cuenta de Claude (5 h, semanal, por modelo) ─────────────────────
+# Lo mismo que enseña /usage en Claude Code: se consulta el endpoint de uso con el token
+# OAuth de la sesión de Claude Code de esta máquina (llavero en macOS, fichero en Linux).
+# Del token no se registra ni se devuelve nada: al móvil solo van porcentajes y reinicios.
+CLAUDE_USAGE_URL     = os.environ.get("CLAUDE_USAGE_URL", "https://api.anthropic.com/api/oauth/usage")
+CLAUDE_USAGE_CACHE_S = 60
+_CLAUDE_USAGE_CACHE: dict = {"ts": 0.0, "data": None}
+_CLAUDE_USAGE_LOCK = threading.Lock()
+_USAGE_LABELS = {"five_hour": "Sesión (5 h)", "seven_day": "Semanal",
+                 "seven_day_opus": "Opus", "seven_day_fable": "Fable", "seven_day_sonnet": "Sonnet"}
+
+def _claude_oauth_token() -> tuple:
+    """(token, error). Primero el fichero ~/.claude/.credentials.json; si no, el llavero."""
+    raw = ""
+    path = os.path.join(CLAUDE_DIR, ".credentials.json")
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                raw = f.read()
+        except OSError:
+            raw = ""
+    if not raw and sys.platform == "darwin":
+        try:
+            r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                               capture_output=True, text=True, timeout=25)
+            raw = r.stdout.strip() if r.returncode == 0 else ""
+            if r.returncode != 0:
+                return "", "el llavero no dio las credenciales de Claude Code (si el Mac pide permiso, elige «Permitir siempre»)"
+        except subprocess.TimeoutExpired:
+            return "", "el llavero está esperando tu permiso en el Mac: acepta «Permitir siempre» y vuelve a intentarlo"
+        except OSError as e:
+            return "", f"llavero: {e}"
+    if not raw:
+        return "", "no hay credenciales de Claude Code en esta máquina"
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        return "", "credenciales ilegibles"
+    o = d.get("claudeAiOauth") if isinstance(d, dict) else None
+    tok = str((o or {}).get("accessToken") or "")
+    if not tok:
+        return "", "Claude Code no ha iniciado sesión con una cuenta de Claude en esta máquina"
+    exp = _to_ms((o or {}).get("expiresAt"))
+    if exp and exp < time.time() * 1000:
+        return "", "el token de Claude Code ha caducado: abre Claude en este Mac para renovarlo"
+    return tok, ""
+
+def cmd_claude_usage(_args: dict) -> dict:
+    """Uso de la cuenta: ventanas (5 h, semanal, por modelo) con % y reinicio. JSON en 'windows'."""
+    with _CLAUDE_USAGE_LOCK:
+        if _CLAUDE_USAGE_CACHE["data"] and time.time() - _CLAUDE_USAGE_CACHE["ts"] < CLAUDE_USAGE_CACHE_S:
+            return dict(_CLAUDE_USAGE_CACHE["data"], cached="1")
+        tok, err = _claude_oauth_token()
+        if err:
+            return {"error": err}
+        req = urllib.request.Request(CLAUDE_USAGE_URL, headers={
+            "Authorization": f"Bearer {tok}", "anthropic-beta": "oauth-2025-04-20",
+            "Accept": "application/json", "User-Agent": "servward-agent"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                body = json.loads(r.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return {"error": "Anthropic rechazó el token de Claude Code (caducado o revocado): abre Claude en este Mac"}
+            return {"error": f"el servicio de uso devolvió {e.code}"}
+        except (urllib.error.URLError, ValueError, OSError) as e:
+            return {"error": f"sin acceso al servicio de uso: {e}"[:160]}
+        windows = []
+        for key, v in (body.items() if isinstance(body, dict) else []):
+            if not isinstance(v, dict) or "utilization" not in v:
+                continue
+            try:
+                pct = float(v.get("utilization") or 0)
+            except (TypeError, ValueError):
+                pct = 0.0
+            resets = v.get("resets_at")
+            resets_ms = _iso_to_ms(resets) if isinstance(resets, str) else _to_ms(resets)
+            windows.append({"key": key, "label": _USAGE_LABELS.get(key, key.replace("_", " ")),
+                            "pct": round(pct, 1), "resets_ms": resets_ms})
+        order = {"five_hour": 0, "seven_day": 1}
+        windows.sort(key=lambda w: (order.get(w["key"], 2), w["key"]))
+        out = {"count": str(len(windows)), "host": platform.node(), "fetched_ms": str(int(time.time() * 1000)),
+               "windows": json.dumps(windows, ensure_ascii=False)}
+        _CLAUDE_USAGE_CACHE.update(ts=time.time(), data=out)
+        return dict(out, cached="0")
+
 # ── Live Activity (Dynamic Island) de la sesión que el móvil estaba usando ──────
 # La app, al irse a segundo plano, arranca una Live Activity de esa sesión y registra
 # aquí su token de push (claude_live_register). Cada evento del hook la actualiza por
@@ -2114,6 +2200,7 @@ COMMAND_MAP = {
     "claude_hooks_install": cmd_claude_hooks_install,
     "claude_live_register":   cmd_claude_live_register,     # Live Activity (Dynamic Island)
     "claude_live_unregister": cmd_claude_live_unregister,
+    "claude_usage":           cmd_claude_usage,             # uso de la cuenta (5 h / semanal / modelo)
     # Terminales tmux (el terminal del móvil; teclear/crear/cerrar exigen ALLOW_CLAUDE_CONTROL=1)
     "tmux_sessions":     cmd_tmux_sessions,
     "tmux_screen":       cmd_tmux_screen,
