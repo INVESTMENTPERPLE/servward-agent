@@ -1482,6 +1482,424 @@ def cmd_claude_start(args: dict) -> dict:
     return {"ok": "1", "id": session_id or job_id, "job_id": job_id, "cwd": cwd,
             "output": out.splitlines()[0][:200]}
 
+# ── Terminales tmux (el terminal del móvil) ───────────────────────────────────
+# El móvil ve la MISMA sesión tmux que hay en el escritorio: tmux_screen devuelve la
+# pantalla (con colores) y tmux_keys teclea en ella. Escribir en un terminal es control
+# total de la máquina, así que tmux_keys / tmux_new / tmux_kill exigen
+# ALLOW_CLAUDE_CONTROL=1 igual que el control de sesiones. Leer la pantalla es solo con
+# token de control (no está en ALLOWED_RO).
+TMUX_BIN    = os.environ.get("TMUX_BIN", "").strip()
+TMUX_SOCKET = os.environ.get("TMUX_SOCKET", "").strip()      # -L <nombre>, opcional
+TMUX_SCROLLBACK_MAX = 2000
+_TMUX_TARGET_RE = re.compile(r"^[A-Za-z0-9_.:%@$\-]{1,120}$")
+_TMUX_KEY_RE    = re.compile(r"^[A-Za-z0-9\-]{1,12}$")
+_TMUX_SESSION_RE = re.compile(r"^[A-Za-z0-9_\-]{1,60}$")
+
+def _tmux_bin() -> str:
+    if TMUX_BIN and os.access(TMUX_BIN, os.X_OK):
+        return TMUX_BIN
+    extra = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", os.environ.get("PATH", "")])
+    return shutil.which("tmux", path=extra) or ""
+
+def _tmux(*args, timeout: int = 10) -> str:
+    argv = [_tmux_bin()] + (["-L", TMUX_SOCKET] if TMUX_SOCKET else []) + list(args)
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                          check=True).stdout
+
+def _tmux_missing():
+    if not _tmux_bin():
+        return {"error": "tmux no está instalado en esta máquina"}
+    return None
+
+def _tmux_target_ok(t: str) -> bool:
+    return bool(t) and bool(_TMUX_TARGET_RE.match(t))
+
+def _claude_by_tmux_pane() -> dict:
+    """pane_id (%N) → sesión de Claude viva que corre dentro de ese pane."""
+    out = {}
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict) or not d.get("tmux") or not _pid_alive(d.get("pid")):
+            continue
+        pane = str(d["tmux"]).rsplit(".", 1)[-1]          # "sess:@1.%1" → "%1"
+        out[pane] = {"id": str(d.get("sessionId") or ""), "name": str(d.get("name") or ""),
+                     "state": {"busy": "working", "idle": "idle"}.get(d.get("status"), "unknown"),
+                     "job_id": str(d.get("jobId") or "")}
+    return out
+
+def cmd_tmux_sessions(_args: dict) -> dict:
+    """Panes de tmux de esta máquina (uno por terminal) con el programa que corre,
+    la carpeta, el tamaño y, si dentro va Claude Code, su sesión. JSON en 'panes'."""
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    fmt = "\x1f".join(["#{session_name}", "#{window_index}", "#{pane_index}", "#{pane_id}",
+                       "#{pane_pid}", "#{pane_current_command}", "#{pane_current_path}",
+                       "#{pane_width}", "#{pane_height}", "#{session_attached}",
+                       "#{session_activity}", "#{pane_title}", "#{history_size}",
+                       "#{session_created}"])
+    try:
+        raw = _tmux("list-panes", "-a", "-F", fmt)
+    except subprocess.CalledProcessError as e:
+        if "no server running" in (e.stderr or "") or "error connecting" in (e.stderr or ""):
+            return {"count": "0", "host": platform.node(), "panes": "[]"}
+        return {"error": (e.stderr or str(e)).strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    claude = _claude_by_tmux_pane()
+    panes = []
+    for line in raw.splitlines():
+        f = line.split("\x1f")
+        if len(f) < 14:
+            continue
+        cl = claude.get(f[3], {})
+        panes.append({
+            "target":      f"{f[0]}:{f[1]}.{f[2]}",
+            "session":     f[0],
+            "pane_id":     f[3],
+            "pid":         int(f[4] or 0),
+            "command":     f[5],
+            "cwd":         f[6],
+            "cols":        int(f[7] or 0),
+            "rows":        int(f[8] or 0),
+            "attached":    f[9] not in ("", "0"),
+            "activity_ms": _to_ms(f[10]),
+            "created_ms":  _to_ms(f[13]),
+            "title":       f[11].strip(),
+            "history":     int(f[12] or 0),
+            "claude_id":   cl.get("id", ""),
+            "claude_name": cl.get("name", ""),
+            "claude_state": cl.get("state", ""),
+            "claude_job":  cl.get("job_id", ""),
+        })
+    panes.sort(key=lambda p: -p["activity_ms"])
+    return {"count": str(len(panes)), "host": platform.node(),
+            "control": "1" if ALLOW_CLAUDE_CONTROL else "0",
+            "panes": json.dumps(panes, ensure_ascii=False)}
+
+def cmd_tmux_screen(args: dict) -> dict:
+    """Pantalla actual de un pane, con colores ANSI (SGR) salvo plain=1. `back` = líneas
+    de scrollback por encima de la pantalla (0-2000)."""
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target' (sesión:ventana.pane)"}
+    try:
+        back = max(0, min(int(args.get("back") or 0), TMUX_SCROLLBACK_MAX))
+    except (TypeError, ValueError):
+        back = 0
+    cap = ["capture-pane", "-p", "-J", "-t", target]
+    if str(args.get("plain") or "") != "1":
+        cap.append("-e")
+    if back:
+        cap += ["-S", f"-{back}"]
+    try:
+        screen = _tmux(*cap)
+        info = _tmux("display-message", "-p", "-t", target,
+                     "#{pane_width}\x1f#{pane_height}\x1f#{cursor_x}\x1f#{cursor_y}\x1f"
+                     "#{pane_in_mode}\x1f#{alternate_on}\x1f#{history_size}\x1f#{pane_title}\x1f"
+                     "#{pane_current_command}\x1f#{pane_dead}").strip().split("\x1f")
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "pane no encontrado").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    info += [""] * (10 - len(info))
+    return {
+        "target":   target,
+        "screen":   screen.rstrip("\n"),
+        "cols":     info[0], "rows": info[1],
+        "cursor_x": info[2], "cursor_y": info[3],
+        "in_mode":  info[4], "alternate": info[5],
+        "history":  info[6], "title": info[7], "command": info[8],
+        "dead":     info[9] or "0",
+        "back":     str(back),
+    }
+
+def cmd_tmux_keys(args: dict) -> dict:
+    """Teclea en un pane: `text` se envía literal; `keys` son nombres de tecla de tmux
+    separados por espacio (Enter, Escape, Tab, BSpace, Up, Down, Left, Right, C-c, C-d,
+    C-l, Home, End, PPage, NPage, F1…). Primero el texto, luego las teclas."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "teclear en terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    text = str(args.get("text") or "")
+    keys = [k for k in str(args.get("keys") or "").split() if k]
+    if len(text) > CLAUDE_TEXT_MAX:
+        return {"error": "texto demasiado largo"}
+    bad = [k for k in keys if not _TMUX_KEY_RE.match(k)]
+    if bad:
+        return {"error": f"tecla no válida: {bad[0][:20]}"}
+    if not text and not keys:
+        return {"error": "nada que enviar"}
+    try:
+        if text:
+            _tmux("send-keys", "-t", target, "-l", "--", text)
+        if keys:
+            _tmux("send-keys", "-t", target, *keys)
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo enviar").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    log.info("TMUX_KEYS target=%s chars=%d keys=%s", target, len(text), " ".join(keys)[:60])
+    return {"ok": "1", "target": target}
+
+def cmd_tmux_new(args: dict) -> dict:
+    """Crea una sesión tmux nueva (desacoplada) y opcionalmente arranca en ella un programa:
+    `claude_attach`=<job> abre una sesión en segundo plano de Claude en un terminal,
+    `claude_resume`=<sessionId> reanuda una conversación de forma interactiva,
+    `claude`=1 arranca Claude Code sin más. Sin nada de eso: un shell."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "crear terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    name = str(args.get("name") or "").strip() or f"sw-{int(time.time()) % 100000}"
+    if not _TMUX_SESSION_RE.match(name):
+        return {"error": "nombre de sesión no válido (letras, números, - y _)"}
+    cwd = os.path.expanduser(str(args.get("cwd") or "").strip()) or os.path.expanduser("~")
+    if not os.path.isdir(cwd):
+        return {"error": f"la carpeta no existe: {cwd[:120]}"}
+    try:
+        cols = max(20, min(int(args.get("cols") or 80), 300))
+        rows = max(5, min(int(args.get("rows") or 24), 100))
+    except (TypeError, ValueError):
+        cols, rows = 80, 24
+    program = []
+    if args.get("claude_attach"):
+        job = str(args["claude_attach"]).strip()
+        if not re.fullmatch(r"[0-9a-f]{8}", job):
+            return {"error": "claude_attach debe ser el id corto del trabajo"}
+        program = [_claude_bin(), "attach", job]
+    elif args.get("claude_resume"):
+        sid = str(args["claude_resume"]).strip()
+        if not re.fullmatch(r"[0-9a-fA-F-]{8,64}", sid):
+            return {"error": "claude_resume debe ser un sessionId"}
+        program = [_claude_bin(), "--resume", sid]
+    elif str(args.get("claude") or "") == "1":
+        program = [_claude_bin()]
+    if program and not program[0]:
+        return {"error": "no encuentro el CLI `claude` en esta máquina"}
+    try:
+        _tmux("new-session", "-d", "-s", name, "-c", cwd, "-x", str(cols), "-y", str(rows), *program)
+        target = _tmux("display-message", "-p", "-t", name,
+                       "#{session_name}:#{window_index}.#{pane_index}").strip()
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo crear").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    log.info("TMUX_NEW session=%s cwd=%s program=%s", name, cwd, " ".join(program)[:80])
+    return {"ok": "1", "target": target, "session": name, "cwd": cwd}
+
+def cmd_tmux_kill(args: dict) -> dict:
+    """Cierra una sesión tmux entera (lo que corría dentro muere)."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "cerrar terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    session = str(args.get("session") or "").strip()
+    if not _TMUX_SESSION_RE.match(session):
+        return {"error": "falta 'session'"}
+    try:
+        _tmux("kill-session", "-t", f"={session}")
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo cerrar").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    log.info("TMUX_KILL session=%s", session)
+    return {"ok": "1", "session": session}
+
+# ── Eventos de Claude Code → push «te necesita» / «terminó» ───────────────────
+# Un hook de Claude Code (~/.servward/claude-hook.sh, instalado por
+# claude_hooks_install) añade cada evento como una línea JSON a
+# ~/.servward/claude-events.jsonl. Este hilo lee las líneas nuevas y avisa al móvil:
+#   Notification permission_prompt / idle_prompt / agent_needs_input → «Te necesita»
+#   Stop en una sesión en segundo plano                               → «Terminó»
+# El interruptor ~/.servward/push-off (claude_push enabled=0) silencia este nodo.
+SERVWARD_DIR       = os.environ.get("SERVWARD_DIR", os.path.expanduser("~/.servward"))
+CLAUDE_EVENTS_FILE = os.path.join(SERVWARD_DIR, "claude-events.jsonl")
+CLAUDE_HOOK_SCRIPT = os.path.join(SERVWARD_DIR, "claude-hook.sh")
+CLAUDE_PUSH_OFF    = os.path.join(SERVWARD_DIR, "push-off")
+CLAUDE_EVENTS_MAX_BYTES = 2 * 1024 * 1024
+CLAUDE_PUSH_STOP_ALL = os.environ.get("CLAUDE_PUSH_STOP_ALL", "0").strip() == "1"
+_NEEDS_YOU_TYPES = {"permission_prompt", "idle_prompt", "agent_needs_input",
+                    "elicitation_dialog", "elicitation_url_dialog"}
+_CLAUDE_HOOK_SH = """#!/bin/bash
+# Servward: guarda el evento de Claude Code (JSON por stdin) para que el agente avise al móvil.
+# No decide nada: siempre sale 0 y nunca escribe en stdout.
+f="$HOME/.servward/claude-events.jsonl"
+mkdir -p "$HOME/.servward" 2>/dev/null
+ev=$(cat | tr -d '\\n\\r')
+[ -n "$ev" ] && printf '{"ts":%s,"ev":%s}\\n' "$(date +%s)" "$ev" >> "$f" 2>/dev/null
+exit 0
+"""
+
+def _claude_push_enabled() -> bool:
+    return not os.path.exists(CLAUDE_PUSH_OFF)
+
+def cmd_claude_push(args: dict) -> dict:
+    """Enciende o apaga los avisos de agentes de ESTE nodo (enabled=1/0). Sin args: estado."""
+    if "enabled" in args:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        if str(args["enabled"]) == "1":
+            try:
+                os.remove(CLAUDE_PUSH_OFF)
+            except FileNotFoundError:
+                pass
+        else:
+            open(CLAUDE_PUSH_OFF, "w").close()
+    return {"enabled": "1" if _claude_push_enabled() else "0",
+            "hooks": "1" if _claude_hooks_installed() else "0"}
+
+def _claude_settings_path() -> str:
+    return os.path.join(CLAUDE_DIR, "settings.json")
+
+def _claude_hooks_installed() -> bool:
+    d = _read_json_file(_claude_settings_path()) or {}
+    hooks = d.get("hooks") if isinstance(d, dict) else None
+    if not isinstance(hooks, dict):
+        return False
+    return any(CLAUDE_HOOK_SCRIPT in json.dumps(v) for v in hooks.values()) and os.access(CLAUDE_HOOK_SCRIPT, os.X_OK)
+
+def cmd_claude_hooks_install(args: dict) -> dict:
+    """Instala el hook en ~/.claude/settings.json (fusiona: no toca los hooks que ya haya)
+    y escribe ~/.servward/claude-hook.sh. remove=1 lo desinstala."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    path = _claude_settings_path()
+    settings = _read_json_file(path)
+    if settings is None and os.path.exists(path):
+        return {"error": "settings.json no es JSON válido; no lo toco"}
+    settings = settings if isinstance(settings, dict) else {}
+    hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
+    ours = {"type": "command", "command": CLAUDE_HOOK_SCRIPT, "async": True, "timeout": 10}
+    events = ["Notification", "Stop", "UserPromptSubmit", "SessionEnd"]
+    if str(args.get("remove") or "") == "1":
+        for ev in events:
+            groups = [g for g in hooks.get(ev, [])
+                      if not any(h.get("command") == CLAUDE_HOOK_SCRIPT for h in g.get("hooks", []))]
+            if groups:
+                hooks[ev] = groups
+            else:
+                hooks.pop(ev, None)
+    else:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        with open(CLAUDE_HOOK_SCRIPT, "w", encoding="utf-8") as f:
+            f.write(_CLAUDE_HOOK_SH)
+        os.chmod(CLAUDE_HOOK_SCRIPT, 0o755)
+        for ev in events:
+            groups = hooks.get(ev) if isinstance(hooks.get(ev), list) else []
+            if not any(h.get("command") == CLAUDE_HOOK_SCRIPT for g in groups for h in g.get("hooks", [])):
+                groups.append({"hooks": [dict(ours)]})
+            hooks[ev] = groups
+    if hooks:
+        settings["hooks"] = hooks
+    else:
+        settings.pop("hooks", None)
+    tmp = path + ".servward.tmp"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    mode = os.stat(path).st_mode & 0o777 if os.path.exists(path) else 0o600
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+    log.info("CLAUDE_HOOKS %s", "removed" if args.get("remove") else "installed")
+    return {"ok": "1", "hooks": "1" if _claude_hooks_installed() else "0", "settings": path}
+
+def _claude_session_label(session_id: str, cwd: str) -> str:
+    info = _claude_find(session_id) if session_id else None
+    if info and info.get("name"):
+        return info["name"]
+    return os.path.basename(cwd.rstrip("/")) or session_id[:8]
+
+def _claude_last_answer(transcript_path: str) -> str:
+    try:
+        lines, _ = _tail_lines(transcript_path, 256 * 1024)
+    except OSError:
+        return ""
+    for m in reversed(_claude_messages(lines, 300)):
+        if m["role"] == "assistant" and m["kind"] == "text":
+            return m["text"].replace("\n", " ")[:160]
+    return ""
+
+def _claude_handle_event(rec: dict):
+    ev = rec.get("ev") if isinstance(rec.get("ev"), dict) else {}
+    name = str(ev.get("hook_event_name") or "")
+    sid  = str(ev.get("session_id") or "")
+    cwd  = str(ev.get("cwd") or "")
+    if not _claude_push_enabled():
+        return
+    if name == "Notification":
+        ntype = str(ev.get("notification_type") or "")
+        if ntype not in _NEEDS_YOU_TYPES:
+            return
+        if not _can_alert(f"claude-needs-{sid}", 60):
+            return
+        label = _claude_session_label(sid, cwd)
+        body = str(ev.get("message") or "Claude está esperando tu respuesta")[:180]
+        send_push(f"🖐 Te necesita · {label}", body,
+                  {"type": "claude", "event": "needs_you", "session": sid, "host": platform.node()})
+    elif name == "Stop":
+        info = _claude_find(sid)
+        is_bg = bool(info and info.get("kind") == "bg")
+        if not (is_bg or CLAUDE_PUSH_STOP_ALL):
+            return
+        if not _can_alert(f"claude-stop-{sid}", 30):
+            return
+        label = _claude_session_label(sid, cwd)
+        body = _claude_last_answer(str(ev.get("transcript_path") or "")) or "Ha terminado la tarea"
+        send_push(f"✅ Terminó · {label}", body,
+                  {"type": "claude", "event": "done", "session": sid, "host": platform.node()})
+
+def claude_events_thread():
+    """Lee las líneas nuevas de claude-events.jsonl y las convierte en avisos."""
+    offset = os.path.getsize(CLAUDE_EVENTS_FILE) if os.path.exists(CLAUDE_EVENTS_FILE) else 0
+    log.info("Eventos de Claude: vigilando %s (push %s)", CLAUDE_EVENTS_FILE,
+             "activo" if _claude_push_enabled() else "APAGADO")
+    while True:
+        try:
+            if os.path.exists(CLAUDE_EVENTS_FILE):
+                size = os.path.getsize(CLAUDE_EVENTS_FILE)
+                if size < offset:
+                    offset = 0                      # fichero truncado o rotado
+                if size > offset:
+                    with open(CLAUDE_EVENTS_FILE, "rb") as f:
+                        f.seek(offset)
+                        chunk = f.read()
+                    nl = chunk.rfind(b"\n")
+                    if nl >= 0:
+                        offset += nl + 1
+                        for line in chunk[:nl].decode("utf-8", "replace").splitlines():
+                            try:
+                                rec = json.loads(line)
+                            except ValueError:
+                                continue
+                            try:
+                                _claude_handle_event(rec)
+                            except Exception as e:
+                                log.warning("CLAUDE_EVENT_ERROR %s", e)
+                if size > CLAUDE_EVENTS_MAX_BYTES and offset >= size:
+                    open(CLAUDE_EVENTS_FILE, "w").close()
+                    offset = 0
+        except Exception as e:
+            log.warning("CLAUDE_EVENTS_LOOP %s", e)
+        time.sleep(2)
+
 # Comandos permitidos con un token de SOLO LECTURA (monitorización).
 # Default-deny: cualquier cmd fuera de este set se rechaza si scope == "ro".
 ALLOWED_RO = {
@@ -1543,6 +1961,14 @@ COMMAND_MAP = {
     "claude_reply":      cmd_claude_reply,
     "claude_stop":       cmd_claude_stop,
     "claude_start":      cmd_claude_start,
+    "claude_push":       cmd_claude_push,
+    "claude_hooks_install": cmd_claude_hooks_install,
+    # Terminales tmux (el terminal del móvil; teclear/crear/cerrar exigen ALLOW_CLAUDE_CONTROL=1)
+    "tmux_sessions":     cmd_tmux_sessions,
+    "tmux_screen":       cmd_tmux_screen,
+    "tmux_keys":         cmd_tmux_keys,
+    "tmux_new":          cmd_tmux_new,
+    "tmux_kill":         cmd_tmux_kill,
     # Servicios y Docker
     "services":       cmd_services,
     "docker":         cmd_docker,
@@ -1667,5 +2093,7 @@ if __name__ == "__main__":
     # Arrancar monitor en hilo background (daemon: muere con el proceso principal)
     t = threading.Thread(target=monitoring_thread, daemon=True, name="monitor")
     t.start()
+    # Avisos de sesiones de Claude Code (lee los eventos que deja el hook)
+    threading.Thread(target=claude_events_thread, daemon=True, name="claude-events").start()
 
     listen_loop()
