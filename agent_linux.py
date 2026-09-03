@@ -1229,10 +1229,36 @@ def _tmux_bin() -> str:
     extra = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", os.environ.get("PATH", "")])
     return shutil.which("tmux", path=extra) or ""
 
-def _tmux(*args, timeout: int = 10) -> str:
-    argv = [_tmux_bin()] + (["-L", TMUX_SOCKET] if TMUX_SOCKET else []) + list(args)
+_TMUX_SOCKET_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,60}$")
+
+def _tmux(*args, socket: str = "", timeout: int = 10) -> str:
+    """Ejecuta tmux contra un socket concreto (-L nombre). Sin socket: el por defecto."""
+    sock = socket or TMUX_SOCKET
+    argv = [_tmux_bin()] + (["-L", sock] if sock else []) + list(args)
     return subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                           check=True).stdout
+
+def _tmux_sockets() -> list:
+    """Nombres de los sockets tmux del usuario: cada programa que lanza su propio
+    servidor tmux (nodeterm, por ejemplo) usa uno distinto y sus sesiones no se ven
+    desde el socket por defecto. Carpeta: $TMUX_TMPDIR/tmux-<uid> o /tmp/tmux-<uid>."""
+    base = os.environ.get("TMUX_TMPDIR") or "/tmp"
+    d = os.path.join(base, f"tmux-{os.getuid()}")
+    names = []
+    try:
+        for n in sorted(os.listdir(d)):
+            p = os.path.join(d, n)
+            try:
+                import stat as _stat
+                if _stat.S_ISSOCK(os.stat(p).st_mode) and _TMUX_SOCKET_RE.match(n):
+                    names.append(n)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    if "default" in names:
+        names.remove("default"); names.insert(0, "default")
+    return names or ["default"]
 
 def _tmux_missing():
     if not _tmux_bin():
@@ -1241,6 +1267,13 @@ def _tmux_missing():
 
 def _tmux_target_ok(t: str) -> bool:
     return bool(t) and bool(_TMUX_TARGET_RE.match(t))
+
+def _tmux_socket_arg(args: dict):
+    """Socket pedido por la app ('' = por defecto) o None si el nombre no vale."""
+    s = str(args.get("socket") or "").strip()
+    if s and not _TMUX_SOCKET_RE.match(s):
+        return None
+    return s
 
 def _claude_by_tmux_pane() -> dict:
     """pane_id (%N) → sesión de Claude viva que corre dentro de ese pane."""
@@ -1266,44 +1299,53 @@ def cmd_tmux_sessions(_args: dict) -> dict:
                        "#{pane_width}", "#{pane_height}", "#{session_attached}",
                        "#{session_activity}", "#{pane_title}", "#{history_size}",
                        "#{session_created}"])
-    try:
-        raw = _tmux("list-panes", "-a", "-F", fmt)
-    except subprocess.CalledProcessError as e:
-        if "no server running" in (e.stderr or "") or "error connecting" in (e.stderr or ""):
-            return {"count": "0", "host": platform.node(), "panes": "[]"}
-        return {"error": (e.stderr or str(e)).strip()[:200]}
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return {"error": f"tmux: {e}"[:200]}
     claude = _claude_by_tmux_pane()
     panes = []
-    for line in raw.splitlines():
-        f = line.split("\x1f")
-        if len(f) < 14:
+    errors = []
+    for sock in _tmux_sockets():
+        try:
+            raw = _tmux("list-panes", "-a", "-F", fmt, socket=sock)
+        except subprocess.CalledProcessError as e:
+            err = (e.stderr or "").strip()
+            if "no server running" in err or "error connecting" in err:
+                continue                              # socket huérfano o sin servidor
+            errors.append(f"{sock}: {err[:120]}")
             continue
-        cl = claude.get(f[3], {})
-        panes.append({
-            "target":      f"{f[0]}:{f[1]}.{f[2]}",
-            "session":     f[0],
-            "pane_id":     f[3],
-            "pid":         int(f[4] or 0),
-            "command":     f[5],
-            "cwd":         f[6],
-            "cols":        int(f[7] or 0),
-            "rows":        int(f[8] or 0),
-            "attached":    f[9] not in ("", "0"),
-            "activity_ms": _to_ms(f[10]),
-            "created_ms":  _to_ms(f[13]),
-            "title":       f[11].strip(),
-            "history":     int(f[12] or 0),
-            "claude_id":   cl.get("id", ""),
-            "claude_name": cl.get("name", ""),
-            "claude_state": cl.get("state", ""),
-            "claude_job":  cl.get("job_id", ""),
-        })
+        except (OSError, subprocess.TimeoutExpired) as e:
+            errors.append(f"{sock}: {e}"[:120])
+            continue
+        for line in raw.splitlines():
+            f = line.split("\x1f")
+            if len(f) < 14:
+                continue
+            cl = claude.get(f[3], {})
+            panes.append({
+                "socket":      "" if sock == "default" else sock,
+                "target":      f"{f[0]}:{f[1]}.{f[2]}",
+                "session":     f[0],
+                "pane_id":     f[3],
+                "pid":         int(f[4] or 0),
+                "command":     f[5],
+                "cwd":         f[6],
+                "cols":        int(f[7] or 0),
+                "rows":        int(f[8] or 0),
+                "attached":    f[9] not in ("", "0"),
+                "activity_ms": _to_ms(f[10]),
+                "created_ms":  _to_ms(f[13]),
+                "title":       f[11].strip(),
+                "history":     int(f[12] or 0),
+                "claude_id":   cl.get("id", ""),
+                "claude_name": cl.get("name", ""),
+                "claude_state": cl.get("state", ""),
+                "claude_job":  cl.get("job_id", ""),
+            })
     panes.sort(key=lambda p: -p["activity_ms"])
-    return {"count": str(len(panes)), "host": platform.node(),
-            "control": "1" if ALLOW_CLAUDE_CONTROL else "0",
-            "panes": json.dumps(panes, ensure_ascii=False)}
+    out = {"count": str(len(panes)), "host": platform.node(),
+           "control": "1" if ALLOW_CLAUDE_CONTROL else "0",
+           "panes": json.dumps(panes, ensure_ascii=False)}
+    if errors:
+        out["warning"] = "; ".join(errors)[:300]
+    return out
 
 def cmd_tmux_screen(args: dict) -> dict:
     """Pantalla actual de un pane, con colores ANSI (SGR) salvo plain=1. `back` = líneas
@@ -1314,6 +1356,9 @@ def cmd_tmux_screen(args: dict) -> dict:
     target = str(args.get("target") or "").strip()
     if not _tmux_target_ok(target):
         return {"error": "falta 'target' (sesión:ventana.pane)"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
     try:
         back = max(0, min(int(args.get("back") or 0), TMUX_SCROLLBACK_MAX))
     except (TypeError, ValueError):
@@ -1324,11 +1369,11 @@ def cmd_tmux_screen(args: dict) -> dict:
     if back:
         cap += ["-S", f"-{back}"]
     try:
-        screen = _tmux(*cap)
+        screen = _tmux(*cap, socket=sock)
         info = _tmux("display-message", "-p", "-t", target,
                      "#{pane_width}\x1f#{pane_height}\x1f#{cursor_x}\x1f#{cursor_y}\x1f"
                      "#{pane_in_mode}\x1f#{alternate_on}\x1f#{history_size}\x1f#{pane_title}\x1f"
-                     "#{pane_current_command}\x1f#{pane_dead}").strip().split("\x1f")
+                     "#{pane_current_command}\x1f#{pane_dead}", socket=sock).strip().split("\x1f")
     except subprocess.CalledProcessError as e:
         return {"error": (e.stderr or "pane no encontrado").strip()[:200]}
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -1368,11 +1413,14 @@ def cmd_tmux_keys(args: dict) -> dict:
         return {"error": f"tecla no válida: {bad[0][:20]}"}
     if not text and not keys:
         return {"error": "nada que enviar"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
     try:
         if text:
-            _tmux("send-keys", "-t", target, "-l", "--", text)
+            _tmux("send-keys", "-t", target, "-l", "--", text, socket=sock)
         if keys:
-            _tmux("send-keys", "-t", target, *keys)
+            _tmux("send-keys", "-t", target, *keys, socket=sock)
     except subprocess.CalledProcessError as e:
         return {"error": (e.stderr or "no se pudo enviar").strip()[:200]}
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -1418,16 +1466,19 @@ def cmd_tmux_new(args: dict) -> dict:
         program = [_claude_bin()]
     if program and not program[0]:
         return {"error": "no encuentro el CLI `claude` en esta máquina"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
     try:
-        _tmux("new-session", "-d", "-s", name, "-c", cwd, "-x", str(cols), "-y", str(rows), *program)
+        _tmux("new-session", "-d", "-s", name, "-c", cwd, "-x", str(cols), "-y", str(rows), *program, socket=sock)
         target = _tmux("display-message", "-p", "-t", name,
-                       "#{session_name}:#{window_index}.#{pane_index}").strip()
+                       "#{session_name}:#{window_index}.#{pane_index}", socket=sock).strip()
     except subprocess.CalledProcessError as e:
         return {"error": (e.stderr or "no se pudo crear").strip()[:200]}
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"error": f"tmux: {e}"[:200]}
     log(f"TMUX_NEW session={name} cwd={cwd} program={' '.join(program)[:80]}")
-    return {"ok": "1", "target": target, "session": name, "cwd": cwd}
+    return {"ok": "1", "target": target, "session": name, "cwd": cwd, "socket": sock}
 
 def cmd_tmux_kill(args: dict) -> dict:
     """Cierra una sesión tmux entera (lo que corría dentro muere)."""
@@ -1441,8 +1492,11 @@ def cmd_tmux_kill(args: dict) -> dict:
     session = str(args.get("session") or "").strip()
     if not _TMUX_SESSION_RE.match(session):
         return {"error": "falta 'session'"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
     try:
-        _tmux("kill-session", "-t", f"={session}")
+        _tmux("kill-session", "-t", f"={session}", socket=sock)
     except subprocess.CalledProcessError as e:
         return {"error": (e.stderr or "no se pudo cerrar").strip()[:200]}
     except (OSError, subprocess.TimeoutExpired) as e:
