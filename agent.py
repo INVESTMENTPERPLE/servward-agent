@@ -11,6 +11,7 @@ Requisitos previos:
 """
 
 import base64
+import glob
 import io
 import json
 import logging
@@ -1064,6 +1065,110 @@ def cmd_quit_app(args: dict) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+# ── Sesiones de Claude Code ───────────────────────────────────────────────────
+# Claude Code deja una ficha por sesión viva en ~/.claude/sessions/<pid>.json y una por
+# trabajo en segundo plano en ~/.claude/jobs/<id>/state.json. Aquí solo se LEEN: el
+# comando no mata, no escribe ni manda nada a las sesiones.
+CLAUDE_DIR = os.environ.get("CLAUDE_DIR", os.path.expanduser("~/.claude"))
+CLAUDE_JOBS_RECENT_S = int(os.environ.get("CLAUDE_JOBS_RECENT_S", str(24 * 3600)))
+# Orden de la lista: primero lo que pide atención, luego lo que trabaja, luego el resto.
+_CLAUDE_STATE_ORDER = {"blocked": 0, "working": 1, "idle": 2, "unknown": 3, "done": 4, "stopped": 5}
+
+def _pid_alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except PermissionError:
+        return True          # existe, pero es de otro usuario
+    except (ProcessLookupError, ValueError, TypeError, OverflowError):
+        return False
+
+def _read_json_file(path: str):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+def _to_ms(v) -> int:
+    """Claude guarda épocas en ms; si alguna llega en segundos, se normaliza."""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return 0
+    return n * 1000 if 0 < n < 10_000_000_000 else n
+
+def cmd_claude_sessions(_args: dict) -> dict:
+    """Sesiones de Claude Code en esta máquina: vivas (interactivas y en segundo plano)
+    y trabajos en segundo plano recientes, con su estado. Devuelve la lista como JSON en
+    'sessions' porque el contrato de respuesta es string-only."""
+    if not os.path.isdir(CLAUDE_DIR):
+        return {"count": "0", "info": "Claude Code no está instalado en esta máquina"}
+    now_ms = int(time.time() * 1000)
+    out: list = []
+
+    # 1) Sesiones vivas: la ficha existe y el PID sigue ahí.
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict) or not _pid_alive(d.get("pid")):
+            continue
+        status = d.get("status")
+        out.append({
+            "id":         str(d.get("sessionId") or d.get("pid")),
+            "name":       str(d.get("name") or d.get("pid")),
+            "kind":       "bg" if d.get("kind") == "bg" else "interactive",
+            "state":      {"busy": "working", "idle": "idle"}.get(status, "unknown"),
+            "cwd":        str(d.get("cwd") or ""),
+            "started_ms": _to_ms(d.get("startedAt")),
+            "updated_ms": _to_ms(d.get("updatedAt") or d.get("startedAt")),
+            "pid":        int(d.get("pid") or 0),
+            "job_id":     str(d.get("jobId") or ""),
+            "detail":     "",
+        })
+
+    # 2) Trabajos en segundo plano: afinan el estado (bloqueado, terminado) y aportan el
+    #    último resumen. Los terminados hace más de CLAUDE_JOBS_RECENT_S no se listan.
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "jobs", "*", "state.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        job_id  = os.path.basename(os.path.dirname(path))
+        state   = str(d.get("state") or "unknown")
+        updated = _to_ms(d.get("updatedAt"))
+        if state in ("done", "stopped") and now_ms - updated > CLAUDE_JOBS_RECENT_S * 1000:
+            continue
+        detail = str(d.get("detail") or "")[:200]
+        live = next((s for s in out if s["job_id"] == job_id), None)
+        if live is not None:
+            live["detail"] = detail
+            if state == "blocked":
+                live["state"] = "blocked"
+            if d.get("name"):
+                live["name"] = str(d["name"])
+            continue
+        # Sin sesión viva: si el fichero dice "running", el proceso ya no está → unknown.
+        mapped = {"running": "unknown", "blocked": "blocked",
+                  "done": "done", "stopped": "stopped"}.get(state, "unknown")
+        out.append({
+            "id":         str(d.get("sessionId") or job_id),
+            "name":       str(d.get("name") or job_id),
+            "kind":       "bg",
+            "state":      mapped,
+            "cwd":        str(d.get("cwd") or ""),
+            "started_ms": _to_ms(d.get("createdAt")),
+            "updated_ms": updated,
+            "pid":        0,
+            "job_id":     job_id,
+            "detail":     detail,
+        })
+
+    out.sort(key=lambda s: (_CLAUDE_STATE_ORDER.get(s["state"], 9), -s["updated_ms"]))
+    return {
+        "count":    str(len(out)),
+        "host":     platform.node(),
+        "sessions": json.dumps(out, ensure_ascii=False),
+    }
+
 # Comandos permitidos con un token de SOLO LECTURA (monitorización).
 # Default-deny: cualquier cmd fuera de este set se rechaza si scope == "ro".
 ALLOWED_RO = {
@@ -1073,6 +1178,7 @@ ALLOWED_RO = {
     "cert_expiry", "check_endpoints", "smart",
     "get_thresholds", "get_custom_alerts",
     "get_volume", "tailscale_status", "list_apps",
+    "claude_sessions",
 }
 
 # ── Mapa de comandos ──────────────────────────────────────────────────────────
@@ -1118,6 +1224,8 @@ COMMAND_MAP = {
     "cert_expiry":     cmd_cert_expiry,
     "check_endpoints": cmd_check_endpoints,
     "smart":           cmd_smart,
+    # Sesiones de Claude Code
+    "claude_sessions": cmd_claude_sessions,
     # Servicios y Docker
     "services":       cmd_services,
     "docker":         cmd_docker,
