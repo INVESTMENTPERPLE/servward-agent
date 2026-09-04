@@ -1660,24 +1660,10 @@ def cmd_tmux_sessions(_args: dict) -> dict:
         out["warning"] = "; ".join(errors)[:300]
     return out
 
-def cmd_tmux_screen(args: dict) -> dict:
-    """Pantalla actual de un pane, con colores ANSI (SGR) salvo plain=1. `back` = líneas
-    de scrollback por encima de la pantalla (0-2000)."""
-    missing = _tmux_missing()
-    if missing:
-        return missing
-    target = str(args.get("target") or "").strip()
-    if not _tmux_target_ok(target):
-        return {"error": "falta 'target' (sesión:ventana.pane)"}
-    sock = _tmux_socket_arg(args)
-    if sock is None:
-        return {"error": "socket no válido"}
-    try:
-        back = max(0, min(int(args.get("back") or 0), TMUX_SCROLLBACK_MAX))
-    except (TypeError, ValueError):
-        back = 0
+def _tmux_capture(target: str, sock: str, back: int = 0, plain: bool = False) -> dict:
+    """Pantalla de un pane (dict de tmux_screen) o {'error': …}."""
     cap = ["capture-pane", "-p", "-J", "-t", target]
-    if str(args.get("plain") or "") != "1":
+    if not plain:
         cap.append("-e")
     if back:
         cap += ["-S", f"-{back}"]
@@ -1702,6 +1688,115 @@ def cmd_tmux_screen(args: dict) -> dict:
         "dead":     info[9] or "0",
         "back":     str(back),
     }
+
+def cmd_tmux_screen(args: dict) -> dict:
+    """Pantalla actual de un pane, con colores ANSI (SGR) salvo plain=1. `back` = líneas
+    de scrollback por encima de la pantalla (0-2000)."""
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target' (sesión:ventana.pane)"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    try:
+        back = max(0, min(int(args.get("back") or 0), TMUX_SCROLLBACK_MAX))
+    except (TypeError, ValueError):
+        back = 0
+    return _tmux_capture(target, sock, back, str(args.get("plain") or "") == "1")
+
+# ── Vigilancia de un pane: la pantalla se EMPUJA al móvil cuando cambia ──────────
+# En vez de que la app pregunte cada pocos cientos de ms, pide `tmux_watch` con un id;
+# el agente captura el pane cada TMUX_WATCH_INTERVAL s y, solo si cambió, publica la
+# pantalla en el topic de respuestas con req_id = ese id. La app renueva la vigilancia
+# antes de que caduque (ttl) y la retira con `tmux_unwatch` al cerrar el terminal.
+TMUX_WATCH_INTERVAL = float(os.environ.get("TMUX_WATCH_INTERVAL", "0.12"))
+TMUX_WATCH_TTL_MAX  = 180
+_TMUX_WATCH_ID_RE   = re.compile(r"^[A-Za-z0-9_\-]{4,64}$")
+_TMUX_WATCHES: dict = {}          # (socket, target) → {"ids": {watch_id: deadline}, "thread": Thread}
+_TMUX_WATCH_LOCK = threading.Lock()
+
+def _tmux_watch_loop(key: tuple):
+    sock, target = key
+    last = None
+    idle_polls = 0
+    while True:
+        with _TMUX_WATCH_LOCK:
+            w = _TMUX_WATCHES.get(key)
+            now = time.time()
+            ids = {i: d for i, d in (w["ids"].items() if w else []) if d > now}
+            if w:
+                w["ids"] = ids
+            if not ids:
+                _TMUX_WATCHES.pop(key, None)
+                log.info("TMUX_WATCH end target=%s", target)
+                return
+        data = _tmux_capture(target, sock)
+        if "error" in data:
+            for wid in ids:
+                publish(wid, "ok", dict(data, watch=wid))
+            with _TMUX_WATCH_LOCK:
+                _TMUX_WATCHES.pop(key, None)
+            return
+        sig = (data["screen"], data["cursor_x"], data["cursor_y"], data["dead"], data["title"])
+        if sig != last:
+            last = sig
+            idle_polls = 0
+            for wid in ids:
+                publish(wid, "ok", dict(data, watch=wid))
+        else:
+            idle_polls += 1
+        # Sin cambios durante un rato, se mira menos a menudo (ahorra CPU sin perder reacción).
+        time.sleep(TMUX_WATCH_INTERVAL if idle_polls < 40 else min(0.5, TMUX_WATCH_INTERVAL * 4))
+
+def cmd_tmux_watch(args: dict) -> dict:
+    """Empieza (o renueva) la vigilancia de un pane: `watch_id` (4-64 caracteres), `ttl`
+    (segundos, máx. 180). Devuelve la pantalla actual; las siguientes llegan solas."""
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    wid = str(args.get("watch_id") or "").strip()
+    if not _TMUX_WATCH_ID_RE.match(wid):
+        return {"error": "watch_id no válido"}
+    try:
+        ttl = max(5, min(int(args.get("ttl") or 90), TMUX_WATCH_TTL_MAX))
+    except (TypeError, ValueError):
+        ttl = 90
+    data = _tmux_capture(target, sock)
+    if "error" in data:
+        return data
+    key = (sock, target)
+    with _TMUX_WATCH_LOCK:
+        w = _TMUX_WATCHES.get(key)
+        if w is None or not w["thread"].is_alive():
+            w = {"ids": {}, "thread": None}
+            _TMUX_WATCHES[key] = w
+            t = threading.Thread(target=_tmux_watch_loop, args=(key,), daemon=True, name=f"watch-{target}")
+            w["thread"] = t
+            w["ids"][wid] = time.time() + ttl
+            t.start()
+            log.info("TMUX_WATCH start target=%s id=%s ttl=%ds", target, wid, ttl)
+        else:
+            w["ids"][wid] = time.time() + ttl
+    return dict(data, watch=wid, ttl=str(ttl))
+
+def cmd_tmux_unwatch(args: dict) -> dict:
+    wid = str(args.get("watch_id") or "").strip()
+    removed = 0
+    with _TMUX_WATCH_LOCK:
+        for w in _TMUX_WATCHES.values():
+            if wid in w["ids"]:
+                del w["ids"][wid]
+                removed += 1
+    return {"ok": "1", "removed": str(removed)}
 
 def cmd_tmux_keys(args: dict) -> dict:
     """Teclea en un pane: `text` se envía literal; `keys` son nombres de tecla de tmux
@@ -2379,6 +2474,8 @@ COMMAND_MAP = {
     # Terminales tmux (el terminal del móvil; teclear/crear/cerrar exigen ALLOW_CLAUDE_CONTROL=1)
     "tmux_sessions":     cmd_tmux_sessions,
     "tmux_screen":       cmd_tmux_screen,
+    "tmux_watch":        cmd_tmux_watch,       # la pantalla se empuja al móvil cuando cambia
+    "tmux_unwatch":      cmd_tmux_unwatch,
     "tmux_keys":         cmd_tmux_keys,
     "tmux_new":          cmd_tmux_new,
     "tmux_kill":         cmd_tmux_kill,
