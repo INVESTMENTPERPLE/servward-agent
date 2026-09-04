@@ -25,6 +25,13 @@ import subprocess
 import sys
 import tempfile
 import threading
+import fcntl
+import pty
+import secrets
+import signal
+import struct
+import termios
+from urllib.parse import urlparse
 import time
 import urllib.request
 import urllib.error
@@ -1727,6 +1734,242 @@ def cmd_tmux_screen(args: dict) -> dict:
         back = 0
     return _tmux_capture(target, sock, back, str(args.get("plain") or "") == "1")
 
+# ── Terminal de verdad en el móvil: cliente tmux en un pseudoterminal, bytes por WebSocket ──
+# `term_open` abre `tmux attach` dentro de un pseudoterminal del tamaño del pane y bombea sus
+# bytes a un canal WebSocket del broker (/term/<canal>?role=agent); el emulador del móvil
+# los dibuja y manda las teclas por el mismo canal. Al cerrarse el canal el cliente tmux se
+# desengancha (la sesión sigue). Cliente WebSocket sin dependencias (RFC 6455).
+TERM_MAX_OPEN   = 6
+_TERM_CHAN_RE   = re.compile(r"^[A-Za-z0-9_\-]{8,64}$")
+_TERM_OPEN: dict = {}            # canal → {"pid", "master", "sock", "target", "started"}
+_TERM_LOCK = threading.Lock()
+
+def _ws_connect(url: str, headers: dict, timeout: int = 15):
+    """Negocia un WebSocket (ws:// o wss://). Devuelve (socket, lector, resto ya recibido)."""
+    u = urlparse(url)
+    secure = u.scheme in ("wss", "https")
+    host = u.hostname or "127.0.0.1"
+    port = u.port or (443 if secure else 80)
+    path = (u.path or "/") + ("?" + u.query if u.query else "")
+    raw = socket.create_connection((host, port), timeout=timeout)
+    if secure:
+        ctx = SSL_CTX if SSL_CTX is not None else ssl.create_default_context()
+        sock = ctx.wrap_socket(raw, server_hostname=host)
+    else:
+        sock = raw
+    key = base64.b64encode(secrets.token_bytes(16)).decode()
+    lines = [f"GET {path} HTTP/1.1", f"Host: {host}:{port}", "Upgrade: websocket", "Connection: Upgrade",
+             f"Sec-WebSocket-Key: {key}", "Sec-WebSocket-Version: 13"]
+    lines += [f"{k}: {v}" for k, v in headers.items()]
+    sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
+    resp = b""
+    while b"\r\n\r\n" not in resp:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise OSError("el broker cerró durante el apretón de manos")
+        resp += chunk
+        if len(resp) > 65536:
+            raise OSError("respuesta de apretón de manos demasiado larga")
+    head, _, rest = resp.partition(b"\r\n\r\n")
+    status = head.split(b"\r\n")[0].decode("utf-8", "replace")
+    if " 101 " not in status:
+        raise OSError(f"el broker rechazó el WebSocket: {status[:80]}")
+    sock.settimeout(None)
+    return sock, rest
+
+def _ws_send(sock, wlock, opcode: int, payload: bytes):
+    """Trama cliente → servidor (enmascarada)."""
+    n = len(payload)
+    head = bytes([0x80 | opcode])
+    if n < 126:
+        head += bytes([0x80 | n])
+    elif n < 65536:
+        head += bytes([0x80 | 126]) + struct.pack(">H", n)
+    else:
+        head += bytes([0x80 | 127]) + struct.pack(">Q", n)
+    mask = secrets.token_bytes(4)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    with wlock:
+        sock.sendall(head + mask + masked)
+
+class _WSReader:
+    """Lee tramas del servidor (sin máscara) de un socket, con un resto inicial."""
+    def __init__(self, sock, rest: bytes):
+        self.sock = sock
+        self.buf = rest
+
+    def _read(self, n: int) -> bytes:
+        while len(self.buf) < n:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                return b""
+            self.buf += chunk
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def frame(self, on_ping):
+        """(opcode, payload) de la siguiente trama de datos, o None si cerrado."""
+        message, msg_op = b"", None
+        while True:
+            h = self._read(2)
+            if len(h) < 2:
+                return None
+            fin, op, n = h[0] & 0x80, h[0] & 0x0F, h[1] & 0x7F
+            masked = h[1] & 0x80
+            if n == 126:
+                n = struct.unpack(">H", self._read(2))[0]
+            elif n == 127:
+                n = struct.unpack(">Q", self._read(8))[0]
+            key = self._read(4) if masked else b""
+            data = self._read(n) if n else b""
+            if n and len(data) < n:
+                return None
+            if masked:
+                data = bytes(b ^ key[i % 4] for i, b in enumerate(data))
+            if op == 0x8:
+                return None
+            if op == 0x9:
+                on_ping(data); continue
+            if op == 0xA:
+                continue
+            if op in (0x1, 0x2):
+                msg_op, message = op, data
+            elif op == 0x0:
+                message += data
+            else:
+                continue
+            if fin:
+                return (msg_op or 0x2, message)
+
+def _term_cleanup(chan: str):
+    with _TERM_LOCK:
+        t = _TERM_OPEN.pop(chan, None)
+    if not t:
+        return
+    for fn in (lambda: os.killpg(os.getpgid(t["pid"]), signal.SIGHUP),
+               lambda: os.close(t["master"]),
+               lambda: t["sock"].close()):
+        try:
+            fn()
+        except Exception:
+            pass
+    log.info("TERM_CLOSE chan=%s target=%s", chan[:12], t["target"])
+
+def _term_pump(chan: str, t: dict, reader: _WSReader):
+    """Bytes del pseudoterminal → WebSocket, y del WebSocket → pseudoterminal."""
+    sock, master, wlock = t["sock"], t["master"], t["wlock"]
+
+    def out_loop():
+        try:
+            while True:
+                data = os.read(master, 65536)
+                if not data:
+                    break
+                _ws_send(sock, wlock, 0x2, data)
+        except Exception:
+            pass
+        _term_cleanup(chan)
+
+    def ping_loop():
+        while chan in _TERM_OPEN:
+            time.sleep(20)
+            try:
+                _ws_send(sock, wlock, 0x9, b"")
+            except Exception:
+                break
+
+    threading.Thread(target=out_loop, daemon=True, name=f"term-out-{chan[:6]}").start()
+    threading.Thread(target=ping_loop, daemon=True, name=f"term-ping-{chan[:6]}").start()
+    try:
+        while True:
+            fr = reader.frame(lambda d: _ws_send(sock, wlock, 0xA, d))
+            if fr is None:
+                break
+            op, data = fr
+            if op == 0x1 and data[:1] == b"{":
+                try:
+                    ctl = json.loads(data.decode("utf-8", "replace"))
+                except ValueError:
+                    ctl = {}
+                if "cols" in ctl and "rows" in ctl:
+                    cols = max(20, min(int(ctl["cols"]), 400)); rows = max(5, min(int(ctl["rows"]), 200))
+                    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+                continue
+            os.write(master, data)
+    except Exception as e:
+        log.debug("TERM_PUMP chan=%s %s", chan[:12], e)
+    _term_cleanup(chan)
+
+def cmd_term_open(args: dict) -> dict:
+    """Abre un terminal en vivo para el móvil: `target`, `socket`, `chan` (8-64 caracteres),
+    `cols`/`rows` opcionales (por defecto, el tamaño del pane: así no se toca el escritorio)."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "el terminal en vivo está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    sock_name = _tmux_socket_arg(args)
+    if sock_name is None:
+        return {"error": "socket no válido"}
+    chan = str(args.get("chan") or "").strip()
+    if not _TERM_CHAN_RE.match(chan):
+        return {"error": "canal no válido"}
+    session = target.split(":", 1)[0]
+    try:
+        info = _tmux("display-message", "-p", "-t", target, "#{pane_width}\x1f#{pane_height}",
+                     socket=sock_name).strip().split("\x1f")
+        cols, rows = int(info[0]), int(info[1])
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired, ValueError, IndexError) as e:
+        return {"error": f"pane no encontrado: {e}"[:160]}
+    try:
+        if args.get("cols"): cols = max(20, min(int(args["cols"]), 400))
+        if args.get("rows"): rows = max(5, min(int(args["rows"]), 200))
+    except (TypeError, ValueError):
+        pass
+    with _TERM_LOCK:
+        if chan in _TERM_OPEN:
+            return {"ok": "1", "chan": chan, "cols": str(cols), "rows": str(rows), "info": "ya abierto"}
+        if len(_TERM_OPEN) >= TERM_MAX_OPEN:
+            return {"error": f"ya hay {TERM_MAX_OPEN} terminales en vivo abiertos"}
+        _TERM_OPEN[chan] = {"pid": 0, "master": -1, "sock": None, "target": target, "started": time.time(), "wlock": threading.Lock()}
+    try:
+        master, slave = pty.openpty()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        env = dict(os.environ, TERM="xterm-256color", LANG=os.environ.get("LANG") or "es_ES.UTF-8")
+        argv = [_tmux_bin()] + (["-L", sock_name] if sock_name else []) + ["-u", "attach-session", "-t", f"={session}"]
+        proc = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, env=env,
+                                preexec_fn=os.setsid, close_fds=True)
+        os.close(slave)
+        ws_url = NTFY_BASE.replace("https://", "wss://", 1).replace("http://", "ws://", 1) + f"/term/{chan}?role=agent"
+        sock, rest = _ws_connect(ws_url, dict(AUTH_HEADERS))
+    except Exception as e:
+        with _TERM_LOCK:
+            _TERM_OPEN.pop(chan, None)
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return {"error": f"no se pudo abrir el terminal en vivo: {e}"[:200]}
+    with _TERM_LOCK:
+        _TERM_OPEN[chan].update(pid=proc.pid, master=master, sock=sock)
+        t = _TERM_OPEN[chan]
+    threading.Thread(target=_term_pump, args=(chan, t, _WSReader(sock, rest)), daemon=True,
+                     name=f"term-in-{chan[:6]}").start()
+    log.info("TERM_OPEN chan=%s target=%s %dx%d", chan[:12], target, cols, rows)
+    return {"ok": "1", "chan": chan, "cols": str(cols), "rows": str(rows), "session": session}
+
+def cmd_term_close(args: dict) -> dict:
+    chan = str(args.get("chan") or "").strip()
+    if chan not in _TERM_OPEN:
+        return {"ok": "1", "info": "no estaba abierto"}
+    _term_cleanup(chan)
+    return {"ok": "1"}
+
 # ── Vigilancia de un pane: la pantalla se EMPUJA al móvil cuando cambia ──────────
 # En vez de que la app pregunte cada pocos cientos de ms, pide `tmux_watch` con un id;
 # el agente captura el pane cada TMUX_WATCH_INTERVAL s y, solo si cambió, publica la
@@ -2719,6 +2962,8 @@ COMMAND_MAP = {
     "tmux_unwatch":      cmd_tmux_unwatch,
     "tmux_keys":         cmd_tmux_keys,
     "tmux_scroll":       cmd_tmux_scroll,      # rueda dentro de apps a pantalla completa (Claude)
+    "term_open":         cmd_term_open,        # terminal en vivo (cliente tmux en pty + WebSocket)
+    "term_close":        cmd_term_close,
     "tmux_new":          cmd_tmux_new,
     "tmux_kill":         cmd_tmux_kill,
     # Servicios y Docker

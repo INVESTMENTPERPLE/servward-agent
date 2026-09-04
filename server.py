@@ -20,6 +20,9 @@ import time
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
+import base64
+import re
+import struct
 
 # ── Configuración (todo desde env vars) ─────────────────────────────────────
 TOKEN     = os.environ.get("NTFY_TOKEN", "").strip()
@@ -177,6 +180,99 @@ def _token_ok(header_value: str) -> bool:
     return _token_scope(header_value) is not None
 
 # ── Handler HTTP ──────────────────────────────────────────────────────────────
+# ── Relé WebSocket para terminales: /term/<canal>?role=agent|app ─────────────
+# El agente abre un cliente tmux en un pseudoterminal y conecta aquí como «agent»; la app
+# conecta como «app». El broker copia las tramas de uno a otro sin mirarlas: los bytes del
+# terminal van al móvil y las teclas del móvil van al terminal. Sin dependencias: apretón
+# de manos y tramas (RFC 6455) a mano. Mismo token Bearer que el resto del broker.
+_WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+_TERM_CHAN_RE = re.compile(r"^[A-Za-z0-9_\-]{8,64}$")
+_TERM_PENDING_MAX = 512 * 1024
+term_channels: dict = {}          # canal → {"agent": _WSConn|None, "app": _WSConn|None, "pending": {rol: [bytes]}}
+term_lock = threading.Lock()
+
+class _WSConn:
+    """Una conexión WebSocket ya negociada (lado servidor: recibe enmascarado, envía en claro)."""
+    def __init__(self, rfile, sock, peer: str):
+        self.rfile = rfile
+        self.sock = sock
+        self.peer = peer
+        self.wlock = threading.Lock()
+        self.closed = False
+
+    def send(self, opcode: int, payload: bytes):
+        n = len(payload)
+        head = bytes([0x80 | opcode])
+        if n < 126:
+            head += bytes([n])
+        elif n < 65536:
+            head += bytes([126]) + struct.pack(">H", n)
+        else:
+            head += bytes([127]) + struct.pack(">Q", n)
+        with self.wlock:
+            if self.closed:
+                return
+            try:
+                self.sock.sendall(head + payload)
+            except OSError:
+                self.closed = True
+
+    def recv(self):
+        """(opcode, payload) de la siguiente trama de datos; None si se cerró. Contesta a los
+        ping. Las tramas fragmentadas se reensamblan."""
+        message = b""
+        msg_op = None
+        while True:
+            h = self.rfile.read(2)
+            if len(h) < 2:
+                return None
+            fin = h[0] & 0x80
+            op = h[0] & 0x0F
+            masked = h[1] & 0x80
+            n = h[1] & 0x7F
+            if n == 126:
+                n = struct.unpack(">H", self.rfile.read(2))[0]
+            elif n == 127:
+                n = struct.unpack(">Q", self.rfile.read(8))[0]
+            if n > 8 * 1024 * 1024:
+                return None
+            key = self.rfile.read(4) if masked else b""
+            data = self.rfile.read(n) if n else b""
+            if len(data) < n:
+                return None
+            if masked:
+                data = bytes(b ^ key[i % 4] for i, b in enumerate(data))
+            if op == 0x8:
+                return None
+            if op == 0x9:
+                self.send(0xA, data)
+                continue
+            if op == 0xA:
+                continue
+            if op in (0x1, 0x2):
+                msg_op = op
+                message = data
+            elif op == 0x0:
+                message += data
+            else:
+                continue
+            if fin:
+                return (msg_op or 0x2, message)
+
+    def close(self):
+        if self.closed:
+            return
+        try:
+            self.send(0x8, b"")
+        except Exception:
+            pass
+        self.closed = True
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -406,9 +502,81 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200, {"ok": True})
 
     # ── GET /topic/sse  ──  suscribirse ───────────────────────────────────────
+    def _handle_term_ws(self, chan: str, role: str):
+        """Negocia el WebSocket y releva tramas con el otro extremo del canal."""
+        if role not in ("agent", "app") or not _TERM_CHAN_RE.match(chan):
+            self._error(400, "bad channel"); return
+        if self.headers.get("Upgrade", "").lower() != "websocket":
+            self._error(426, "websocket required"); return
+        if not self._auth():
+            return
+        if getattr(self, "auth_scope", "") != "rw":
+            self._error(403, "read-only token"); return
+        key = self.headers.get("Sec-WebSocket-Key", "")
+        if not key:
+            self._error(400, "missing key"); return
+        accept = base64.b64encode(hashlib.sha1((key + _WS_GUID).encode()).digest()).decode()
+        self.connection.sendall(
+            b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+            b"Sec-WebSocket-Accept: " + accept.encode() + b"\r\n\r\n")
+        self.close_connection = True
+        ip = self.client_address[0]
+        conn = _WSConn(self.rfile, self.connection, ip)
+        other = "app" if role == "agent" else "agent"
+        with term_lock:
+            ch = term_channels.setdefault(chan, {"agent": None, "app": None, "pending": {"agent": [], "app": []}})
+            old = ch.get(role)
+            ch[role] = conn
+            # Lo que el otro lado mandó antes de que llegáramos, ahora.
+            backlog = ch["pending"][role]
+            ch["pending"][role] = []
+        if old is not None:
+            old.close()
+        log.info("TERM_WS  chan=%s role=%s from=%s  connected", chan[:12], role, ip)
+        for data in backlog:
+            conn.send(0x2, data)
+        try:
+            while True:
+                frame = conn.recv()
+                if frame is None:
+                    break
+                op, data = frame
+                with term_lock:
+                    peer = term_channels.get(chan, {}).get(other)
+                    if peer is None:
+                        pend = term_channels.get(chan, {}).get("pending", {}).get(other)
+                        if pend is not None and sum(len(p) for p in pend) < _TERM_PENDING_MAX:
+                            pend.append(data)
+                        continue
+                peer.send(op, data)
+        except Exception as e:
+            log.debug("TERM_WS chan=%s role=%s error %s", chan[:12], role, e)
+        finally:
+            conn.close()
+            with term_lock:
+                ch = term_channels.get(chan)
+                peer = None
+                if ch and ch.get(role) is conn:
+                    ch[role] = None
+                    peer = ch.get(other)
+                    ch[other] = None
+                    term_channels.pop(chan, None)
+            if peer is not None:
+                peer.close()                       # se va uno, se va el otro: el tmux se desengancha
+            log.info("TERM_WS  chan=%s role=%s from=%s  closed", chan[:12], role, ip)
+
     def do_GET(self):
         if self.path.rstrip("/") == "/device-tokens":
             self._handle_device_token_get(); return
+        if self.path.startswith("/term/"):
+            rest = self.path[len("/term/"):]
+            chan, _, query = rest.partition("?")
+            role = ""
+            for kv in query.split("&"):
+                k, _, v = kv.partition("=")
+                if k == "role":
+                    role = v
+            self._handle_term_ws(chan.strip("/"), role); return
         parts = [p for p in self.path.strip("/").split("/") if p]
         if len(parts) != 2 or parts[1] != "sse":
             self._error(404, "not found"); return
