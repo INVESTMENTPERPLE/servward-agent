@@ -1962,7 +1962,10 @@ def cmd_term_open(args: dict) -> dict:
         # la pantalla entera parpadeaba al teclear.
         argv = [_tmux_bin()] + (["-L", sock_name] if sock_name else []) + ["-T", "sync", "-u", "attach-session", "-t", f"={session}"]
         proc = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, env=env,
-                                preexec_fn=os.setsid, close_fds=True)
+                                # El pty pasa a ser el terminal de control del cliente tmux: sin
+                                # TIOCSCTTY no recibe SIGWINCH y no se entera de los cambios de tamaño.
+                                preexec_fn=lambda: (os.setsid(), fcntl.ioctl(slave, termios.TIOCSCTTY, 0)),
+                                close_fds=True)
         os.close(slave)
         ws_url = NTFY_BASE.replace("https://", "wss://", 1).replace("http://", "ws://", 1) + f"/term/{chan}?role=agent"
         sock, rest = _ws_connect(ws_url, dict(AUTH_HEADERS))
