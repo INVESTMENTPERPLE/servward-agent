@@ -825,6 +825,34 @@ def _to_ms(v) -> int:
         return 0
     return n * 1000 if 0 < n < 10_000_000_000 else n
 
+def _live_session_files() -> list:
+    """Fichas de sesión con proceso vivo (dicts)."""
+    out = []
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if isinstance(d, dict) and _pid_alive(d.get("pid")):
+            out.append(d)
+    return out
+
+def _parked_target(d: dict, live: list):
+    """Un terminal interactivo puede haber «aparcado» su sesión en un trabajo en segundo
+    plano (`parkedJobId`): el proceso que trabaja de verdad es otro, con otro id. Devuelve
+    la ficha de ese trabajo si sigue vivo, o None."""
+    job = str(d.get("parkedJobId") or "")
+    if not job:
+        return None
+    for t in live:
+        if str(t.get("jobId") or "") == job and t is not d:
+            return t
+    return None
+
+def _effective_id(d: dict, live: list) -> str:
+    """Id vivo de una ficha: el de su sesión aparcada si la hay, si no el aprendido del hook
+    para su PID, si no el de la ficha."""
+    t = _parked_target(d, live)
+    src = t if t else d
+    return _live_session_id(src.get("pid"), str(src.get("sessionId") or src.get("pid") or ""))
+
 def cmd_claude_sessions(_args: dict) -> dict:
     """Sesiones de Claude Code en esta máquina: vivas (interactivas y en segundo plano)
     y trabajos en segundo plano recientes, con su estado. Devuelve la lista como JSON en
@@ -834,22 +862,27 @@ def cmd_claude_sessions(_args: dict) -> dict:
     now_ms = int(time.time() * 1000)
     out: list = []
 
-    # 1) Sesiones vivas: la ficha existe y el PID sigue ahí.
-    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
-        d = _read_json_file(path)
-        if not isinstance(d, dict) or not _pid_alive(d.get("pid")):
+    # 1) Sesiones vivas: la ficha existe y el PID sigue ahí. Un terminal con sesión
+    #    aparcada representa a esa sesión (nombre, estado e id del trabajo), que no se
+    #    lista dos veces.
+    live = _live_session_files()
+    parked_jobs = {str(d.get("parkedJobId")) for d in live if d.get("parkedJobId")}
+    for d in live:
+        if d.get("kind") == "bg" and str(d.get("jobId") or "") in parked_jobs:
             continue
-        status = d.get("status")
+        t = _parked_target(d, live)
+        src = t if t else d
+        status = src.get("status")
         out.append({
-            "id":         str(d.get("sessionId") or d.get("pid")),
-            "name":       str(d.get("name") or d.get("pid")),
+            "id":         _effective_id(d, live),
+            "name":       str(src.get("name") or d.get("name") or d.get("pid")),
             "kind":       "bg" if d.get("kind") == "bg" else "interactive",
             "state":      {"busy": "working", "idle": "idle"}.get(status, "unknown"),
-            "cwd":        str(d.get("cwd") or ""),
+            "cwd":        str(src.get("cwd") or d.get("cwd") or ""),
             "started_ms": _to_ms(d.get("startedAt")),
-            "updated_ms": _to_ms(d.get("updatedAt") or d.get("startedAt")),
+            "updated_ms": _to_ms(src.get("updatedAt") or d.get("updatedAt") or d.get("startedAt")),
             "pid":        int(d.get("pid") or 0),
-            "job_id":     str(d.get("jobId") or ""),
+            "job_id":     str(src.get("jobId") or d.get("jobId") or ""),
             "detail":     "",
         })
 
@@ -934,16 +967,22 @@ def _claude_find(ident: str):
     if not ident:
         return None
     found = None
+    live = _live_session_files()
     for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
         d = _read_json_file(path)
         if not isinstance(d, dict):
             continue
-        if ident in (str(d.get("sessionId")), str(d.get("jobId")), str(d.get("pid"))):
-            alive = _pid_alive(d.get("pid"))
-            found = {"session_id": str(d.get("sessionId") or ""), "job_id": str(d.get("jobId") or ""),
+        alive = _pid_alive(d.get("pid"))
+        live_id = _effective_id(d, live) if alive else str(d.get("sessionId") or "")
+        t = _parked_target(d, live) if alive else None
+        if ident in (str(d.get("sessionId")), str(d.get("jobId")), str(d.get("pid")), live_id,
+                     str(d.get("parkedJobId") or "")):
+            src = t if t else d
+            found = {"session_id": live_id,
+                     "job_id": str(src.get("jobId") or d.get("jobId") or ""),
                      "kind": "bg" if d.get("kind") == "bg" else "interactive",
-                     "cwd": str(d.get("cwd") or ""), "pid": int(d.get("pid") or 0) if alive else 0,
-                     "name": str(d.get("name") or "")}
+                     "cwd": str(src.get("cwd") or d.get("cwd") or ""), "pid": int(d.get("pid") or 0) if alive else 0,
+                     "name": str(src.get("name") or d.get("name") or "")}
             if alive:
                 return found
     for path in glob.glob(os.path.join(CLAUDE_DIR, "jobs", "*", "state.json")):
@@ -1278,14 +1317,16 @@ def _tmux_socket_arg(args: dict):
 def _claude_by_tmux_pane() -> dict:
     """pane_id (%N) → sesión de Claude viva que corre dentro de ese pane."""
     out = {}
-    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
-        d = _read_json_file(path)
-        if not isinstance(d, dict) or not d.get("tmux") or not _pid_alive(d.get("pid")):
+    live = _live_session_files()
+    for d in live:
+        if not d.get("tmux"):
             continue
         pane = str(d["tmux"]).rsplit(".", 1)[-1]          # "sess:@1.%1" → "%1"
-        out[pane] = {"id": str(d.get("sessionId") or ""), "name": str(d.get("name") or ""),
-                     "state": {"busy": "working", "idle": "idle"}.get(d.get("status"), "unknown"),
-                     "job_id": str(d.get("jobId") or "")}
+        src = _parked_target(d, live) or d
+        out[pane] = {"id": _effective_id(d, live),
+                     "name": str(src.get("name") or d.get("name") or ""),
+                     "state": {"busy": "working", "idle": "idle"}.get(src.get("status"), "unknown"),
+                     "job_id": str(src.get("jobId") or d.get("jobId") or "")}
     return out
 
 def cmd_tmux_sessions(_args: dict) -> dict:
@@ -1521,13 +1562,104 @@ _NEEDS_YOU_TYPES = {"permission_prompt", "idle_prompt", "agent_needs_input",
                     "elicitation_dialog", "elicitation_url_dialog"}
 _CLAUDE_HOOK_SH = """#!/bin/bash
 # Servward: guarda el evento de Claude Code (JSON por stdin) para que el agente avise al móvil.
-# No decide nada: siempre sale 0 y nunca escribe en stdout.
+# No decide nada: siempre sale 0 y nunca escribe en stdout. Apunta la cadena de PIDs que
+# lo lanzó: así el agente sabe qué proceso de Claude emite cada sesión aunque el id de la
+# sesión cambie (tras compactar el contexto, Claude sigue con un id nuevo).
 f="$HOME/.servward/claude-events.jsonl"
 mkdir -p "$HOME/.servward" 2>/dev/null
 ev=$(cat | tr -d '\\n\\r')
-[ -n "$ev" ] && printf '{"ts":%s,"ev":%s}\\n' "$(date +%s)" "$ev" >> "$f" 2>/dev/null
+p1=$PPID
+p2=$(ps -o ppid= -p "$p1" 2>/dev/null | tr -d ' ')
+p3=$(ps -o ppid= -p "${p2:-0}" 2>/dev/null | tr -d ' ')
+[ -n "$ev" ] && printf '{"ts":%s,"pids":[%s,%s,%s],"ev":%s}\\n' "$(date +%s)" "${p1:-0}" "${p2:-0}" "${p3:-0}" "$ev" >> "$f" 2>/dev/null
 exit 0
 """
+
+# ── Identidad real de cada sesión ───────────────────────────────────────────────
+# Tras compactar el contexto, Claude Code sigue escribiendo en un transcript con un id
+# NUEVO y los hooks lo emiten, pero ~/.claude/sessions/<pid>.json se queda con el viejo.
+# El agente aprende de cada evento del hook «el proceso <pid> emite ahora la sesión <id>»
+# y lo persiste; con eso la lista, el transcript y la Live Activity usan siempre el id vivo.
+CLAUDE_PIDMAP_FILE = os.path.join(SERVWARD_DIR, "pid-sessions.json")
+_PID_SESSION: dict = {}          # pid (str) → {"id": sessionId, "ts": epoch}
+_PID_SESSION_LOCK = threading.Lock()
+
+def _pidmap_load():
+    d = _read_json_file(CLAUDE_PIDMAP_FILE)
+    if isinstance(d, dict):
+        with _PID_SESSION_LOCK:
+            _PID_SESSION.update({str(k): v for k, v in d.items() if isinstance(v, dict) and v.get("id")})
+
+def _pidmap_learn(pids: list, sid: str, cwd: str):
+    """Asocia el id de sesión del evento a los PIDs vivos de la cadena que lanzó el hook.
+    Si ninguno es un proceso de Claude conocido, se asocia por carpeta cuando solo hay
+    una sesión interactiva viva con ese cwd."""
+    if not sid:
+        return
+    known = {}
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if isinstance(d, dict) and d.get("pid") and _pid_alive(d.get("pid")):
+            known[str(d["pid"])] = d
+    targets = [str(p) for p in pids if str(p) in known]
+    if not targets:
+        same_cwd = [p for p, d in known.items() if str(d.get("cwd") or "") == cwd and d.get("kind") != "bg"]
+        if len(same_cwd) == 1:
+            targets = same_cwd
+    if not targets:
+        return
+    changed = False
+    with _PID_SESSION_LOCK:
+        for p in targets:
+            if _PID_SESSION.get(p, {}).get("id") != sid:
+                changed = True
+            _PID_SESSION[p] = {"id": sid, "ts": int(time.time())}
+        for p in [p for p in _PID_SESSION if not _pid_alive(p)]:
+            _PID_SESSION.pop(p, None)
+        snapshot = dict(_PID_SESSION)
+    if changed:
+        log(f"CLAUDE_SESSION_ID pid={','.join(targets)} → {sid[:8]}")
+    try:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        tmp = CLAUDE_PIDMAP_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f)
+        os.replace(tmp, CLAUDE_PIDMAP_FILE)
+    except OSError:
+        pass
+
+def _live_session_id(pid, fallback: str) -> str:
+    """Id vivo de la sesión del proceso `pid` (el aprendido del hook) o el de la ficha."""
+    with _PID_SESSION_LOCK:
+        entry = _PID_SESSION.get(str(pid))
+    return entry["id"] if entry and entry.get("id") else fallback
+
+def _session_aliases(ident: str) -> set:
+    """Todos los ids con los que se conoce la misma sesión: el de la ficha, el aprendido
+    del hook, el id corto del trabajo y el de reanudación."""
+    ids = {ident}
+    live = _live_session_files()
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        fam = {str(d.get("sessionId") or ""), str(d.get("jobId") or ""),
+               _live_session_id(d.get("pid"), ""), str(d.get("pid") or ""),
+               str(d.get("parkedJobId") or "")} - {""}
+        t = _parked_target(d, live)
+        if t:
+            fam |= {str(t.get("sessionId") or ""), _live_session_id(t.get("pid"), ""), str(t.get("pid") or "")} - {""}
+        if ident in fam:
+            ids |= fam
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "jobs", "*", "state.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        fam = {os.path.basename(os.path.dirname(path)), str(d.get("sessionId") or ""),
+               str(d.get("resumeSessionId") or "")} - {""}
+        if ids & fam:
+            ids |= fam
+    return ids
 
 def _claude_push_enabled() -> bool:
     return not os.path.exists(CLAUDE_PUSH_OFF)
@@ -1757,16 +1889,19 @@ def send_live_activity(token, state, detail, name, end=False, alert=None) -> boo
     return code not in ("400", "410")
 
 def _live_update(sid: str, state: str, detail: str, end: bool = False, alert=None):
+    """Actualiza la Live Activity registrada para esta sesión, con cualquiera de sus ids."""
     with _CLAUDE_LIVE_LOCK:
         d = _live_load()
-        entry = d.get(sid)
-    if not entry:
+    keys = [k for k in d if k == sid] or [k for k in d if k in _session_aliases(sid)]
+    if not keys:
         return
+    key = keys[0]
+    entry = d[key]
     ok = send_live_activity(entry["token"], state, detail, entry.get("name", ""), end=end, alert=alert)
     if end or not ok:
         with _CLAUDE_LIVE_LOCK:
             d = _live_load()
-            d.pop(sid, None)
+            d.pop(key, None)
             _live_save(d)
 
 def _claude_session_label(session_id: str, cwd: str) -> str:
@@ -1790,6 +1925,10 @@ def _claude_handle_event(rec: dict):
     name = str(ev.get("hook_event_name") or "")
     sid  = str(ev.get("session_id") or "")
     cwd  = str(ev.get("cwd") or "")
+    # 0) Aprender qué proceso emite esta sesión (el id puede haber cambiado al compactar).
+    pids = rec.get("pids") if isinstance(rec.get("pids"), list) else []
+    if name != "SessionEnd":
+        _pidmap_learn(pids, sid, cwd)
     # 1) Live Activity de la sesión que el móvil está siguiendo (aunque el push esté silenciado).
     if name == "UserPromptSubmit":
         _live_update(sid, "working", str(ev.get("prompt") or "")[:160])
@@ -1824,6 +1963,7 @@ def _claude_handle_event(rec: dict):
 
 def claude_events_thread():
     """Lee las líneas nuevas de claude-events.jsonl y las convierte en avisos."""
+    _pidmap_load()
     offset = os.path.getsize(CLAUDE_EVENTS_FILE) if os.path.exists(CLAUDE_EVENTS_FILE) else 0
     log(f"Eventos de Claude: vigilando {CLAUDE_EVENTS_FILE} (push {'activo' if _claude_push_enabled() else 'APAGADO'})")
     while True:
