@@ -19,6 +19,7 @@ import os
 import platform
 import re
 import shutil
+import select
 import socket
 import ssl
 import subprocess
@@ -1865,6 +1866,16 @@ def _term_pump(chan: str, t: dict, reader: _WSReader):
                 data = os.read(master, 65536)
                 if not data:
                     break
+                # Un redibujado sale del pty en varios trozos: se juntan los que llegan en
+                # los 8 ms siguientes (hasta 256 KB) y viajan en una sola trama.
+                while len(data) < 262144:
+                    r, _, _ = select.select([master], [], [], 0.008)
+                    if not r:
+                        break
+                    more = os.read(master, 65536)
+                    if not more:
+                        break
+                    data += more
                 _ws_send(sock, wlock, 0x2, data)
         except Exception:
             pass
@@ -1941,7 +1952,10 @@ def cmd_term_open(args: dict) -> dict:
         master, slave = pty.openpty()
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
         env = dict(os.environ, TERM="xterm-256color", LANG=os.environ.get("LANG") or "es_ES.UTF-8")
-        argv = [_tmux_bin()] + (["-L", sock_name] if sock_name else []) + ["-u", "attach-session", "-t", f"={session}"]
+        # -T sync: tmux envuelve cada redibujado en «salida sincronizada» (DEC 2026) y el
+        # emulador del móvil lo pinta de una vez; sin esto, cada trozo llegaba a medias y
+        # la pantalla entera parpadeaba al teclear.
+        argv = [_tmux_bin()] + (["-L", sock_name] if sock_name else []) + ["-T", "sync", "-u", "attach-session", "-t", f"={session}"]
         proc = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, env=env,
                                 preexec_fn=os.setsid, close_fds=True)
         os.close(slave)
