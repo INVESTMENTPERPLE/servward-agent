@@ -1866,9 +1866,14 @@ def _term_pump(chan: str, t: dict, reader: _WSReader):
                 data = os.read(master, 65536)
                 if not data:
                     break
-                # Un redibujado sale del pty en varios trozos: se juntan los que llegan en
-                # los 8 ms siguientes (hasta 256 KB) y viajan en una sola trama.
-                while len(data) < 262144:
+                # Un redibujado sale del pty en varios trozos: se juntan hasta que el bloque
+                # sincronizado de tmux está cerrado (tantos «h» como «l» de DEC 2026); si el
+                # trozo no trae marcas se espera 8 ms por si viene más. Tope: 256 KB / 40 ms.
+                deadline = time.monotonic() + 0.040
+                while len(data) < 262144 and time.monotonic() < deadline:
+                    opened = data.count(b"\x1b[?2026h")
+                    if opened and opened == data.count(b"\x1b[?2026l"):
+                        break
                     r, _, _ = select.select([master], [], [], 0.008)
                     if not r:
                         break
