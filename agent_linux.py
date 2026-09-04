@@ -2154,6 +2154,49 @@ def cmd_claude_answer(args: dict) -> dict:
         res["via"] = "reply"
     return res
 
+# ── Vigilancia de una sesión por eventos (la conversación se avisa al móvil) ─────
+_CLAUDE_WATCHES: dict = {}        # watch_id → {"sid": sessionId, "deadline": epoch}
+_CLAUDE_WATCH_LOCK = threading.Lock()
+
+def cmd_claude_watch(args: dict) -> dict:
+    ident = str(args.get("id") or "").strip()
+    wid = str(args.get("watch_id") or "").strip()
+    if not ident or not _TMUX_WATCH_ID_RE.match(wid):
+        return {"error": "faltan 'id' o 'watch_id'"}
+    try:
+        ttl = max(5, min(int(args.get("ttl") or 120), 300))
+    except (TypeError, ValueError):
+        ttl = 120
+    with _CLAUDE_WATCH_LOCK:
+        _CLAUDE_WATCHES[wid] = {"sid": ident, "deadline": time.time() + ttl}
+        for k in [k for k, v in _CLAUDE_WATCHES.items() if v["deadline"] < time.time()]:
+            _CLAUDE_WATCHES.pop(k, None)
+    att = _attention_for(ident) or {}
+    return {"ok": "1", "watch": wid, "ttl": str(ttl), "state": str(att.get("state") or ""),
+            "detail": str(att.get("detail") or "")}
+
+def cmd_claude_unwatch(args: dict) -> dict:
+    wid = str(args.get("watch_id") or "").strip()
+    with _CLAUDE_WATCH_LOCK:
+        removed = _CLAUDE_WATCHES.pop(wid, None) is not None
+    return {"ok": "1", "removed": "1" if removed else "0"}
+
+def _claude_watch_notify(sid: str, name: str, state: str, detail: str):
+    with _CLAUDE_WATCH_LOCK:
+        now = time.time()
+        targets = [(k, v["sid"]) for k, v in _CLAUDE_WATCHES.items() if v["deadline"] > now]
+    if not targets:
+        return
+    aliases = None
+    for wid, wsid in targets:
+        if wsid != sid:
+            if aliases is None:
+                aliases = _session_aliases(sid)
+            if wsid not in aliases:
+                continue
+        publish(wid, "ok", {"watch": wid, "event": name, "state": state, "detail": detail[:200],
+                            "ts_ms": str(int(time.time() * 1000))})
+
 def _claude_handle_event(rec: dict):
     ev = rec.get("ev") if isinstance(rec.get("ev"), dict) else {}
     name = str(ev.get("hook_event_name") or "")
@@ -2163,16 +2206,21 @@ def _claude_handle_event(rec: dict):
     pids = rec.get("pids") if isinstance(rec.get("pids"), list) else []
     if name != "SessionEnd":
         _pidmap_learn(pids, sid, cwd)
-    # 0b) Estado de atención (alimenta la lista de sesiones).
+    # 0b) Estado de atención (alimenta la lista de sesiones) y aviso a quien vigile la sesión.
     if name == "UserPromptSubmit":
         _attention_set(sid, "working", str(ev.get("prompt") or ""))
+        _claude_watch_notify(sid, name, "working", str(ev.get("prompt") or ""))
     elif name == "Notification" and str(ev.get("notification_type") or "") in _NEEDS_YOU_TYPES:
         _attention_set(sid, "needs_you", str(ev.get("message") or "Espera tu respuesta"))
+        _claude_watch_notify(sid, name, "needs_you", str(ev.get("message") or ""))
     elif name == "Stop":
         ans = _claude_last_answer(str(ev.get("transcript_path") or ""))
-        _attention_set(sid, "needs_you" if ans.rstrip().endswith(("?", "？")) else "done", ans)
+        st = "needs_you" if ans.rstrip().endswith(("?", "？")) else "done"
+        _attention_set(sid, st, ans)
+        _claude_watch_notify(sid, name, st, ans)
     elif name == "SessionEnd":
         _attention_set(sid, "", remove=True)
+        _claude_watch_notify(sid, name, "done", "Sesión cerrada")
     # 1) Live Activity de la sesión que el móvil está siguiendo (aunque el push esté silenciado).
     if name == "UserPromptSubmit":
         _live_update(sid, "working", str(ev.get("prompt") or "")[:160])
@@ -2241,7 +2289,7 @@ def claude_events_thread():
                     offset = 0
         except Exception as e:
             log(f"CLAUDE_EVENTS_LOOP {e}")
-        time.sleep(2)
+        time.sleep(0.5)     # medio segundo: la isla y la conversación reaccionan casi al instante
 
 # Comandos permitidos con un token de SOLO LECTURA (monitorización).
 # Default-deny: cualquier cmd fuera de este set se rechaza si scope == "ro".
@@ -2308,6 +2356,8 @@ COMMAND_MAP = {
     "claude_live_unregister": cmd_claude_live_unregister,
     "claude_usage":           cmd_claude_usage,             # uso de la cuenta (5 h / semanal / modelo)
     "claude_answer":          cmd_claude_answer,            # responder desde el aviso (terminal o reply)
+    "claude_watch":           cmd_claude_watch,             # la conversación avisa al móvil por eventos
+    "claude_unwatch":         cmd_claude_unwatch,
     # Terminales tmux (teclear/crear/cerrar exigen ALLOW_CLAUDE_CONTROL=1)
     "tmux_sessions":     cmd_tmux_sessions,
     "tmux_screen":       cmd_tmux_screen,
