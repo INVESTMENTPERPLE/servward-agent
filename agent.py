@@ -1732,16 +1732,22 @@ def cmd_tmux_screen(args: dict) -> dict:
 # el agente captura el pane cada TMUX_WATCH_INTERVAL s y, solo si cambió, publica la
 # pantalla en el topic de respuestas con req_id = ese id. La app renueva la vigilancia
 # antes de que caduque (ttl) y la retira con `tmux_unwatch` al cerrar el terminal.
-TMUX_WATCH_INTERVAL = float(os.environ.get("TMUX_WATCH_INTERVAL", "0.12"))
+TMUX_WATCH_INTERVAL = float(os.environ.get("TMUX_WATCH_INTERVAL", "0.06"))   # con actividad
+TMUX_WATCH_IDLE_S   = float(os.environ.get("TMUX_WATCH_IDLE_S", "0.25"))     # en reposo, tope
 TMUX_WATCH_TTL_MAX  = 180
 _TMUX_WATCH_ID_RE   = re.compile(r"^[A-Za-z0-9_\-]{4,64}$")
 _TMUX_WATCHES: dict = {}          # (socket, target) → {"ids": {watch_id: deadline}, "thread": Thread}
 _TMUX_WATCH_LOCK = threading.Lock()
+_TMUX_WATCH_WAKE: dict = {}       # (socket, target) → época de la última tecla/rueda: mirar rápido
+
+def _tmux_watch_wake(sock: str, target: str):
+    """Una tecla o rueda acaba de entrar en el pane: el vigilante mira a ritmo rápido."""
+    _TMUX_WATCH_WAKE[(sock, target)] = time.time()
 
 def _tmux_watch_loop(key: tuple):
     sock, target = key
     last = None
-    idle_polls = 0
+    last_change = time.time()
     while True:
         with _TMUX_WATCH_LOCK:
             w = _TMUX_WATCHES.get(key)
@@ -1751,6 +1757,7 @@ def _tmux_watch_loop(key: tuple):
                 w["ids"] = ids
             if not ids:
                 _TMUX_WATCHES.pop(key, None)
+                _TMUX_WATCH_WAKE.pop(key, None)
                 log.info("TMUX_WATCH end target=%s", target)
                 return
         data = _tmux_capture(target, sock)
@@ -1763,13 +1770,13 @@ def _tmux_watch_loop(key: tuple):
         sig = (data["screen"], data["cursor_x"], data["cursor_y"], data["dead"], data["title"])
         if sig != last:
             last = sig
-            idle_polls = 0
+            last_change = time.time()
             for wid in ids:
                 publish(wid, "ok", dict(data, watch=wid))
-        else:
-            idle_polls += 1
-        # Sin cambios durante un rato, se mira menos a menudo (ahorra CPU sin perder reacción).
-        time.sleep(TMUX_WATCH_INTERVAL if idle_polls < 40 else min(0.5, TMUX_WATCH_INTERVAL * 4))
+        # Ritmo: rápido mientras la pantalla cambia o acaba de entrar una tecla; en reposo
+        # nunca más de TMUX_WATCH_IDLE_S, para que el primer cambio no llegue con retraso.
+        since = min(time.time() - last_change, time.time() - _TMUX_WATCH_WAKE.get(key, 0))
+        time.sleep(TMUX_WATCH_INTERVAL if since < 3 else TMUX_WATCH_IDLE_S)
 
 def cmd_tmux_watch(args: dict) -> dict:
     """Empieza (o renueva) la vigilancia de un pane: `watch_id` (4-64 caracteres), `ttl`
@@ -1853,6 +1860,7 @@ def cmd_tmux_keys(args: dict) -> dict:
         return {"error": (e.stderr or "no se pudo enviar").strip()[:200]}
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"error": f"tmux: {e}"[:200]}
+    _tmux_watch_wake(sock, target)
     log.info("TMUX_KEYS target=%s chars=%d keys=%s", target, len(text), " ".join(keys)[:60])
     return {"ok": "1", "target": target}
 
@@ -1899,6 +1907,7 @@ def cmd_tmux_scroll(args: dict) -> dict:
         return {"error": (e.stderr or "no se pudo desplazar").strip()[:200]}
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"error": f"tmux: {e}"[:200]}
+    _tmux_watch_wake(sock, target)
     return {"ok": "1", "via": via, "n": str(n), "alternate": info[3] or "0"}
 
 def cmd_tmux_new(args: dict) -> dict:
