@@ -1577,6 +1577,49 @@ def cmd_tmux_keys(args: dict) -> dict:
     log(f"TMUX_KEYS target={target} chars={len(text)} keys={' '.join(keys)[:60]}")
     return {"ok": "1", "target": target}
 
+def cmd_tmux_scroll(args: dict) -> dict:
+    """Desplaza lo que corre DENTRO del pane (apps a pantalla completa como Claude Code):
+    `n` pasos de rueda de ratón (`dir` up/down) si la app sigue el ratón; si no, Página."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "desplazar terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    direction = "up" if str(args.get("dir") or "up") != "down" else "down"
+    try:
+        n = max(1, min(int(args.get("n") or 1), 60))
+    except (TypeError, ValueError):
+        n = 1
+    try:
+        info = _tmux("display-message", "-p", "-t", target,
+                     "#{mouse_any_flag}\x1f#{pane_width}\x1f#{pane_height}\x1f#{alternate_on}",
+                     socket=sock).strip().split("\x1f")
+        info += [""] * (4 - len(info))
+        mouse = info[0] == "1"
+        cols = max(1, int(info[1] or 1)); rows = max(1, int(info[2] or 1))
+        if mouse:
+            code = 64 if direction == "up" else 65
+            seq = f"\x1b[<{code};{cols // 2 + 1};{rows // 2 + 1}M" * n
+            _tmux("send-keys", "-t", target, "-l", "--", seq, socket=sock)
+            via = "mouse"
+        else:
+            key = "PPage" if direction == "up" else "NPage"
+            _tmux("send-keys", "-t", target, *([key] * max(1, n // 3)), socket=sock)
+            via = "keys"
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo desplazar").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    return {"ok": "1", "via": via, "n": str(n), "alternate": info[3] or "0"}
+
 def cmd_tmux_new(args: dict) -> dict:
     """Crea una sesión tmux nueva (desacoplada) y opcionalmente arranca en ella un programa:
     `claude_attach`=<job> abre una sesión en segundo plano de Claude en un terminal,
@@ -2364,6 +2407,7 @@ COMMAND_MAP = {
     "tmux_watch":        cmd_tmux_watch,       # la pantalla se empuja al móvil cuando cambia
     "tmux_unwatch":      cmd_tmux_unwatch,
     "tmux_keys":         cmd_tmux_keys,
+    "tmux_scroll":       cmd_tmux_scroll,      # rueda dentro de apps a pantalla completa (Claude)
     "tmux_new":          cmd_tmux_new,
     "tmux_kill":         cmd_tmux_kill,
 }
