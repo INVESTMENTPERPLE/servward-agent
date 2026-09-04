@@ -2491,6 +2491,71 @@ def _claude_oauth_token() -> tuple:
         return "", "el token de Claude Code ha caducado: abre Claude en este Mac para renovarlo"
     return tok, ""
 
+def cmd_claude_commands(args: dict) -> dict:
+    """Comandos con barra disponibles para Claude Code en esta máquina: skills
+    (~/.claude/skills/*/SKILL.md) y comandos propios (~/.claude/commands/**/*.md), más los
+    del proyecto de la carpeta indicada (.claude/skills y .claude/commands). Solo nombre y
+    descripción, como JSON en 'commands' (contrato string-only). Solo lectura."""
+    out: list = []
+    seen: set = set()
+
+    def add(name: str, desc: str, kind: str, scope: str) -> None:
+        key = (kind, name)
+        if not name or key in seen:
+            return
+        seen.add(key)
+        out.append({"name": name, "description": " ".join(desc.split())[:160], "kind": kind, "scope": scope})
+
+    def frontmatter(path: str):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                head = f.read(4000)
+        except OSError:
+            return {}, ""
+        meta: dict = {}
+        body = head
+        if head.startswith("---"):
+            end = head.find("\n---", 3)
+            if end > 0:
+                for line in head[3:end].splitlines():
+                    if ":" in line and not line.startswith((" ", "\t")):
+                        k, v = line.split(":", 1)
+                        meta[k.strip()] = v.strip().strip('"').strip("'")
+                body = head[end + 4:]
+        return meta, body
+
+    def scan(base: str, scope: str) -> None:
+        sk = os.path.join(base, "skills")
+        if os.path.isdir(sk):
+            for d in sorted(os.listdir(sk)):
+                p = os.path.join(sk, d, "SKILL.md")
+                if not os.path.isfile(p):
+                    continue
+                meta, _body = frontmatter(p)
+                if str(meta.get("user-invocable", "")).lower() == "false":
+                    continue
+                add(meta.get("name") or d, meta.get("description") or "", "skill", scope)
+        cm = os.path.join(base, "commands")
+        if os.path.isdir(cm):
+            for root, _dirs, files in os.walk(cm):
+                for fn in sorted(files):
+                    if not fn.endswith(".md"):
+                        continue
+                    meta, body = frontmatter(os.path.join(root, fn))
+                    desc = meta.get("description") or next(
+                        (ln.strip("# ").strip() for ln in body.splitlines() if ln.strip()), "")
+                    folder = os.path.relpath(root, cm)
+                    if folder != ".":
+                        desc = f"({folder}) {desc}"
+                    add(fn[:-3], desc, "command", scope)
+
+    scan(CLAUDE_DIR, "user")
+    cwd = str(args.get("cwd") or "")
+    if cwd and os.path.isdir(os.path.join(cwd, ".claude")):
+        scan(os.path.join(cwd, ".claude"), "project")
+    return {"count": str(len(out)), "commands": json.dumps(out, ensure_ascii=False)}
+
+
 def cmd_claude_usage(_args: dict) -> dict:
     """Uso de la cuenta: ventanas (5 h, semanal, por modelo) con % y reinicio. JSON en 'windows'."""
     with _CLAUDE_USAGE_LOCK:
@@ -2917,7 +2982,7 @@ ALLOWED_RO = {
     "cert_expiry", "check_endpoints", "smart",
     "get_thresholds", "get_custom_alerts",
     "get_volume", "tailscale_status", "list_apps",
-    "claude_sessions",
+    "claude_sessions", "claude_commands",
 }
 
 # ── Mapa de comandos ──────────────────────────────────────────────────────────
@@ -2974,6 +3039,7 @@ COMMAND_MAP = {
     "claude_live_register":   cmd_claude_live_register,     # Live Activity (Dynamic Island)
     "claude_live_unregister": cmd_claude_live_unregister,
     "claude_usage":           cmd_claude_usage,             # uso de la cuenta (5 h / semanal / modelo)
+    "claude_commands":        cmd_claude_commands,          # skills y comandos con barra de esta máquina
     "claude_answer":          cmd_claude_answer,            # responder desde el aviso (terminal o reply)
     "claude_watch":           cmd_claude_watch,             # la conversación avisa al móvil por eventos
     "claude_unwatch":         cmd_claude_unwatch,
