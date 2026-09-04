@@ -909,16 +909,23 @@ def cmd_claude_sessions(_args: dict) -> dict:
         if state in ("done", "stopped") and now_ms - updated > CLAUDE_JOBS_RECENT_S * 1000:
             continue
         detail = str(d.get("detail") or "")[:200]
+        # «blocked» con tempo «active» (o tareas en vuelo) es un trabajo ejecutando una
+        # herramienta, no uno que espera respuesta.
+        in_flight = int(((d.get("inFlight") or {}).get("tasks") or 0) if isinstance(d.get("inFlight"), dict) else 0)
+        waiting = state == "blocked" and str(d.get("tempo") or "") != "active" and in_flight == 0
         live = next((s for s in out if s["job_id"] == job_id), None)
         if live is not None:
-            live["detail"] = detail
-            if state == "blocked":
+            if detail and not live.get("detail"):
+                live["detail"] = detail
+            if waiting:
                 live["state"] = "blocked"
+            elif state == "blocked" and live["state"] == "blocked" and not _attention_for(live["id"]):
+                live["state"] = "working"
             if d.get("name"):
                 live["name"] = str(d["name"])
             continue
         # Sin sesión viva: si el fichero dice "running", el proceso ya no está → unknown.
-        mapped = {"running": "unknown", "blocked": "blocked",
+        mapped = {"running": "unknown", "blocked": "blocked" if waiting else "unknown",
                   "done": "done", "stopped": "stopped"}.get(state, "unknown")
         out.append({
             "id":         str(d.get("sessionId") or job_id),
