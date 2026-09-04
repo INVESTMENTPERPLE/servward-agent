@@ -1830,7 +1830,9 @@ CLAUDE_HOOK_SCRIPT = os.path.join(SERVWARD_DIR, "claude-hook.sh")
 CLAUDE_PUSH_OFF    = os.path.join(SERVWARD_DIR, "push-off")
 CLAUDE_EVENTS_MAX_BYTES = 2 * 1024 * 1024
 CLAUDE_PUSH_STOP_ALL = os.environ.get("CLAUDE_PUSH_STOP_ALL", "0").strip() == "1"
-_NEEDS_YOU_TYPES = {"permission_prompt", "idle_prompt", "agent_needs_input",
+# idle_prompt («esperando tu entrada» a los 60 s de reposo) NO cuenta: saltaría tras cada
+# respuesta y pondría el semáforo en amarillo sin que Claude necesite nada.
+_NEEDS_YOU_TYPES = {"permission_prompt", "agent_needs_input",
                     "elicitation_dialog", "elicitation_url_dialog"}
 _CLAUDE_HOOK_SH = """#!/bin/bash
 # Servward: guarda el evento de Claude Code (JSON por stdin) para que el agente avise al móvil.
@@ -2114,16 +2116,38 @@ def _live_save(d: dict):
         json.dump(d, f)
     os.replace(tmp, CLAUDE_LIVE_FILE)
 
+def _live_resolve_pane_id(sid: str) -> str:
+    """La app puede registrar un terminal sin sesión conocida como «socket|sesión:ventana.pane»;
+    si dentro de ese pane corre Claude, se usa el id de esa sesión para que los eventos
+    del hook la encuentren."""
+    if "|" not in sid:
+        return sid
+    socket, _, target = sid.partition("|")
+    if not _tmux_target_ok(target) or (socket and not _TMUX_SOCKET_RE.match(socket)) or not _tmux_bin():
+        return sid
+    try:
+        pane_id = _tmux("display-message", "-p", "-t", target, "#{pane_id}", socket=socket).strip()
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+        return sid
+    claude = _claude_by_tmux_pane().get(pane_id, {})
+    return claude.get("id") or sid
+
 def cmd_claude_live_register(args: dict) -> dict:
     """Registra el token de la Live Activity de una sesión (session_id, token, name)."""
     sid = str(args.get("session_id") or "").strip()
     token = str(args.get("token") or "").strip()
     if not sid or not _LIVE_TOKEN_RE.match(token):
         return {"error": "faltan session_id o token"}
+    sid = _live_resolve_pane_id(sid)
+    aliases = _session_aliases(sid)
+    now = int(time.time())
     with _CLAUDE_LIVE_LOCK:
         d = _live_load()
-        d[sid] = {"token": token, "name": str(args.get("name") or "")[:80], "ts": int(time.time())}
-        # Como mucho 20 registros; fuera los más viejos.
+        # Una sola actividad por sesión: fuera los registros de sus otros ids (la app
+        # cierra la actividad anterior al crear la nueva) y los de más de 12 h.
+        for k in [k for k in d if (k != sid and k in aliases) or now - int(d[k].get("ts", 0)) > 12 * 3600]:
+            d.pop(k, None)
+        d[sid] = {"token": token, "name": str(args.get("name") or "")[:80], "ts": now}
         for old in sorted(d, key=lambda k: d[k].get("ts", 0))[:-20]:
             d.pop(old, None)
         _live_save(d)
@@ -2166,19 +2190,26 @@ def send_live_activity(token: str, state: str, detail: str, name: str,
     return code not in ("400", "410")
 
 def _live_update(sid: str, state: str, detail: str, end: bool = False, alert: Optional[tuple] = None):
-    """Actualiza la Live Activity registrada para esta sesión, con cualquiera de sus ids."""
+    """Actualiza la(s) Live Activity registrada(s) para esta sesión, con cualquiera de sus ids."""
     with _CLAUDE_LIVE_LOCK:
         d = _live_load()
-    keys = [k for k in d if k == sid] or [k for k in d if k in _session_aliases(sid)]
+    if not d:
+        return
+    aliases = _session_aliases(sid)
+    keys = [k for k in d if k == sid or k in aliases]
     if not keys:
         return
-    key = keys[0]
-    entry = d[key]
-    ok = send_live_activity(entry["token"], state, detail, entry.get("name", ""), end=end, alert=alert)
-    if end or not ok:
+    drop = []
+    for key in keys:
+        entry = d[key]
+        ok = send_live_activity(entry["token"], state, detail, entry.get("name", ""), end=end, alert=alert)
+        if end or not ok:
+            drop.append(key)
+    if drop:
         with _CLAUDE_LIVE_LOCK:
             d = _live_load()
-            d.pop(key, None)
+            for key in drop:
+                d.pop(key, None)
             _live_save(d)
 
 def _claude_session_label(session_id: str, cwd: str) -> str:
@@ -2213,7 +2244,10 @@ def _claude_handle_event(rec: dict):
     elif name == "Notification" and str(ev.get("notification_type") or "") in _NEEDS_YOU_TYPES:
         _live_update(sid, "needs_you", str(ev.get("message") or "Espera tu respuesta"))
     elif name == "Stop":
-        _live_update(sid, "done", _claude_last_answer(str(ev.get("transcript_path") or "")) or "Ha acabado")
+        answer = _claude_last_answer(str(ev.get("transcript_path") or ""))
+        # Si Claude termina preguntándote algo, te necesita (amarillo), no ha acabado (verde).
+        asks = answer.rstrip().endswith("?") or answer.rstrip().endswith("？")
+        _live_update(sid, "needs_you" if asks else "done", answer or "Ha acabado")
     elif name == "SessionEnd":
         _live_update(sid, "done", "Sesión cerrada", end=True)
     # 2) Avisos push
