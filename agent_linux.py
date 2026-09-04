@@ -873,17 +873,28 @@ def cmd_claude_sessions(_args: dict) -> dict:
         t = _parked_target(d, live)
         src = t if t else d
         status = src.get("status")
+        eff_id = _effective_id(d, live)
+        state = {"busy": "working", "idle": "idle"}.get(status, "unknown")
+        detail = ""
+        att = _attention_for(eff_id)
+        if att:
+            detail = str(att.get("detail") or "")
+            if att.get("state") == "needs_you":
+                state = "blocked"
+            elif att.get("state") == "working" and state == "unknown":
+                state = "working"
         out.append({
-            "id":         _effective_id(d, live),
+            "id":         eff_id,
             "name":       str(src.get("name") or d.get("name") or d.get("pid")),
             "kind":       "bg" if d.get("kind") == "bg" else "interactive",
-            "state":      {"busy": "working", "idle": "idle"}.get(status, "unknown"),
+            "state":      state,
             "cwd":        str(src.get("cwd") or d.get("cwd") or ""),
             "started_ms": _to_ms(d.get("startedAt")),
-            "updated_ms": _to_ms(src.get("updatedAt") or d.get("updatedAt") or d.get("startedAt")),
+            "updated_ms": max(_to_ms(src.get("updatedAt") or d.get("updatedAt") or d.get("startedAt")),
+                              int(att.get("ts", 0)) * 1000 if att else 0),
             "pid":        int(d.get("pid") or 0),
             "job_id":     str(src.get("jobId") or d.get("jobId") or ""),
-            "detail":     "",
+            "detail":     detail,
         })
 
     # 2) Trabajos en segundo plano: afinan el estado (bloqueado, terminado) y aportan el
@@ -2040,6 +2051,102 @@ def _claude_last_answer(transcript_path: str) -> str:
             return m["text"].replace("\n", " ")[:160]
     return ""
 
+# ── Estado de atención por sesión (lo que dicen los hooks) ───────────────────────
+CLAUDE_ATTENTION_FILE = os.path.join(SERVWARD_DIR, "session-state.json")
+_ATTENTION: dict = {}           # sid → {"state": working|needs_you|done, "detail": str, "ts": epoch}
+_ATTENTION_LOCK = threading.Lock()
+
+def _attention_load():
+    d = _read_json_file(CLAUDE_ATTENTION_FILE)
+    if isinstance(d, dict):
+        with _ATTENTION_LOCK:
+            _ATTENTION.update({k: v for k, v in d.items() if isinstance(v, dict)})
+
+def _attention_set(sid: str, state: str, detail: str = "", remove: bool = False):
+    if not sid:
+        return
+    now = int(time.time())
+    with _ATTENTION_LOCK:
+        if remove:
+            _ATTENTION.pop(sid, None)
+        else:
+            _ATTENTION[sid] = {"state": state, "detail": detail[:200], "ts": now}
+        for k in [k for k, v in _ATTENTION.items() if now - int(v.get("ts", 0)) > 3 * 24 * 3600]:
+            _ATTENTION.pop(k, None)
+        snapshot = dict(_ATTENTION)
+    try:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        tmp = CLAUDE_ATTENTION_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False)
+        os.replace(tmp, CLAUDE_ATTENTION_FILE)
+    except OSError:
+        pass
+
+def _attention_for(ident: str):
+    with _ATTENTION_LOCK:
+        if ident in _ATTENTION:
+            return dict(_ATTENTION[ident])
+        snap = dict(_ATTENTION)
+    if not snap:
+        return None
+    for k in _session_aliases(ident):
+        if k in snap:
+            return dict(snap[k])
+    return None
+
+def _claude_pane_for(ident: str):
+    """(socket, target) del pane de tmux donde corre esta sesión, o None."""
+    aliases = _session_aliases(ident)
+    live = _live_session_files()
+    for d in live:
+        if not d.get("tmux"):
+            continue
+        fam = {str(d.get("sessionId") or ""), _effective_id(d, live), str(d.get("parkedJobId") or "")} - {""}
+        if fam & aliases:
+            sess, _, rest = str(d["tmux"]).partition(":")
+            pane_id = rest.rsplit(".", 1)[-1]
+            for sock in _tmux_sockets():
+                try:
+                    target = _tmux("display-message", "-p", "-t", pane_id,
+                                   "#{session_name}:#{window_index}.#{pane_index}", socket=sock).strip()
+                except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+                    continue
+                if target.startswith(sess + ":"):
+                    return ("" if sock == "default" else sock, target)
+    return None
+
+def cmd_claude_answer(args: dict) -> dict:
+    """Responde a una sesión desde el aviso: terminal (texto + Intro, o solo Intro con
+    yes=1) o claude_reply si es en segundo plano."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    ident = str(args.get("id") or "").strip()
+    text = str(args.get("text") or "").strip()
+    yes = str(args.get("yes") or "") == "1"
+    if not ident:
+        return {"error": "falta 'id'"}
+    pane = _claude_pane_for(ident)
+    if pane:
+        sock, target = pane
+        try:
+            if text:
+                _tmux("send-keys", "-t", target, "-l", "--", text, socket=sock)
+            _tmux("send-keys", "-t", target, "Enter", socket=sock)
+        except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as e:
+            return {"error": f"tmux: {e}"[:160]}
+        log(f"CLAUDE_ANSWER terminal target={target} chars={len(text)} yes={yes}")
+        return {"ok": "1", "via": "terminal", "target": target}
+    if not text:
+        text = "sí" if yes else ""
+    if not text:
+        return {"error": "esta sesión no está en un terminal: hace falta un texto"}
+    res = cmd_claude_reply({"id": ident, "text": text})
+    if "ok" in res:
+        res["via"] = "reply"
+    return res
+
 def _claude_handle_event(rec: dict):
     ev = rec.get("ev") if isinstance(rec.get("ev"), dict) else {}
     name = str(ev.get("hook_event_name") or "")
@@ -2049,6 +2156,16 @@ def _claude_handle_event(rec: dict):
     pids = rec.get("pids") if isinstance(rec.get("pids"), list) else []
     if name != "SessionEnd":
         _pidmap_learn(pids, sid, cwd)
+    # 0b) Estado de atención (alimenta la lista de sesiones).
+    if name == "UserPromptSubmit":
+        _attention_set(sid, "working", str(ev.get("prompt") or ""))
+    elif name == "Notification" and str(ev.get("notification_type") or "") in _NEEDS_YOU_TYPES:
+        _attention_set(sid, "needs_you", str(ev.get("message") or "Espera tu respuesta"))
+    elif name == "Stop":
+        ans = _claude_last_answer(str(ev.get("transcript_path") or ""))
+        _attention_set(sid, "needs_you" if ans.rstrip().endswith(("?", "？")) else "done", ans)
+    elif name == "SessionEnd":
+        _attention_set(sid, "", remove=True)
     # 1) Live Activity de la sesión que el móvil está siguiendo (aunque el push esté silenciado).
     if name == "UserPromptSubmit":
         _live_update(sid, "working", str(ev.get("prompt") or "")[:160])
@@ -2087,6 +2204,7 @@ def _claude_handle_event(rec: dict):
 def claude_events_thread():
     """Lee las líneas nuevas de claude-events.jsonl y las convierte en avisos."""
     _pidmap_load()
+    _attention_load()
     offset = os.path.getsize(CLAUDE_EVENTS_FILE) if os.path.exists(CLAUDE_EVENTS_FILE) else 0
     log(f"Eventos de Claude: vigilando {CLAUDE_EVENTS_FILE} (push {'activo' if _claude_push_enabled() else 'APAGADO'})")
     while True:
@@ -2182,6 +2300,7 @@ COMMAND_MAP = {
     "claude_live_register":   cmd_claude_live_register,     # Live Activity (Dynamic Island)
     "claude_live_unregister": cmd_claude_live_unregister,
     "claude_usage":           cmd_claude_usage,             # uso de la cuenta (5 h / semanal / modelo)
+    "claude_answer":          cmd_claude_answer,            # responder desde el aviso (terminal o reply)
     # Terminales tmux (teclear/crear/cerrar exigen ALLOW_CLAUDE_CONTROL=1)
     "tmux_sessions":     cmd_tmux_sessions,
     "tmux_screen":       cmd_tmux_screen,
