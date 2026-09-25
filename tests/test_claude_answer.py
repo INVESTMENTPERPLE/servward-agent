@@ -88,7 +88,7 @@ class AgentMac(_Base, unittest.TestCase):
     MODULE = "agent"
 
     def test_el_aviso_lleva_la_marca_del_momento(self):
-        ntype = sorted(self.agent._NEEDS_YOU_TYPES)[0]
+        ntype = min(self.agent._NEEDS_YOU_TYPES)
         self.agent._claude_handle_event({"ev": {"hook_event_name": "Notification", "session_id": "s2",
                                                 "cwd": "/tmp", "notification_type": ntype,
                                                 "message": "¿Puedo ejecutar rm?"}})

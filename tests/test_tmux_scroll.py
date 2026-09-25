@@ -47,7 +47,7 @@ class _Base:
 
     def tearDown(self):
         self.agent._claude_control_blocked = self._blocked
-        subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True)
+        subprocess.run([TMUX, "-L", SOCK, "kill-server"], capture_output=True, check=False)
         try:
             os.remove(os.path.join(os.environ.get("TMUX_TMPDIR") or "/tmp", f"tmux-{os.getuid()}", SOCK))
         except OSError:
