@@ -2748,7 +2748,10 @@ def _attention_set(sid: str, state: str, detail: str = "", remove: bool = False)
         if remove:
             _ATTENTION.pop(sid, None)
         else:
-            _ATTENTION[sid] = {"state": state, "detail": detail[:200], "ts": now}
+            # `ev`: marca de este momento de la sesión. Viaja en el aviso y claude_answer la
+            # exige: una respuesta desde un aviso viejo no cae en una pregunta posterior.
+            _ATTENTION[sid] = {"state": state, "detail": detail[:200], "ts": now,
+                               "ev": secrets.token_hex(4)}
         for k in [k for k, v in _ATTENTION.items() if now - int(v.get("ts", 0)) > 3 * 24 * 3600]:
             _ATTENTION.pop(k, None)
         snapshot = dict(_ATTENTION)
@@ -2808,6 +2811,17 @@ def cmd_claude_answer(args: dict) -> dict:
     yes = str(args.get("yes") or "") == "1"
     if not ident:
         return {"error": "falta 'id'"}
+    # Desde un aviso llega `ev`, la marca del momento avisado. Si la sesión ha cambiado desde
+    # entonces (respondiste en el Mac, Claude sigue trabajando o pregunta OTRA cosa) no se
+    # teclea nada: un «Sí» viejo aprobaría lo que haya pendiente ahora. Sin `ev` (apps
+    # anteriores a la build 68) se mantiene el comportamiento de antes.
+    ev = str(args.get("ev") or "").strip()
+    if ev:
+        att = _attention_for(ident) or {}
+        if att.get("ev") != ev or (yes and att.get("state") != "needs_you"):
+            log.info("CLAUDE_ANSWER_STALE id=%s state=%s", ident[:8], att.get("state"))
+            return {"error": "Esa pregunta ya no está pendiente: abre la sesión en la app.",
+                    "stale": "1"}
     pane = _claude_pane_for(ident)
     if pane:
         sock, target = pane
@@ -2923,7 +2937,8 @@ def _claude_handle_event(rec: dict):
         body = str(ev.get("message") or "Claude está esperando tu respuesta")[:180]
         send_push(f"🖐 Te necesita · {label}", body,
                   {"type": "claude", "event": "needs_you", "session": sid, "name": label,
-                   "host": platform.node(), "topic": CMD_TOPIC}, category="SW_CLAUDE")
+                   "host": platform.node(), "topic": CMD_TOPIC,
+                   "ev": str((_attention_for(sid) or {}).get("ev") or "")}, category="SW_CLAUDE")
     elif name == "Stop":
         info = _claude_find(sid)
         is_bg = bool(info and info.get("kind") == "bg")
@@ -2935,7 +2950,8 @@ def _claude_handle_event(rec: dict):
         body = _claude_last_answer(str(ev.get("transcript_path") or "")) or "Ha terminado la tarea"
         send_push(f"✅ Terminó · {label}", body,
                   {"type": "claude", "event": "done", "session": sid, "name": label,
-                   "host": platform.node(), "topic": CMD_TOPIC}, category="SW_CLAUDE")
+                   "host": platform.node(), "topic": CMD_TOPIC,
+                   "ev": str((_attention_for(sid) or {}).get("ev") or "")}, category="SW_CLAUDE")
 
 def claude_events_thread():
     """Lee las líneas nuevas de claude-events.jsonl y las convierte en avisos."""

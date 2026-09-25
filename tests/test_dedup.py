@@ -7,6 +7,7 @@ import importlib
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -14,6 +15,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("NTFY_SERVER", "https://broker.invalid")
 os.environ.setdefault("NTFY_TOKEN", "test")
+os.environ.setdefault("SERVWARD_DIR", tempfile.mkdtemp(prefix="servward-test-"))
 
 
 def _msg(req_id, cmd):

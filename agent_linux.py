@@ -2445,7 +2445,9 @@ def _attention_set(sid: str, state: str, detail: str = "", remove: bool = False)
         if remove:
             _ATTENTION.pop(sid, None)
         else:
-            _ATTENTION[sid] = {"state": state, "detail": detail[:200], "ts": now}
+            # `ev`: marca de este momento de la sesión (ver cmd_claude_answer).
+            _ATTENTION[sid] = {"state": state, "detail": detail[:200], "ts": now,
+                               "ev": secrets.token_hex(4)}
         for k in [k for k, v in _ATTENTION.items() if now - int(v.get("ts", 0)) > 3 * 24 * 3600]:
             _ATTENTION.pop(k, None)
         snapshot = dict(_ATTENTION)
@@ -2502,6 +2504,15 @@ def cmd_claude_answer(args: dict) -> dict:
     yes = str(args.get("yes") or "") == "1"
     if not ident:
         return {"error": "falta 'id'"}
+    # Con `ev` (desde un aviso): si la sesión cambió desde entonces no se teclea nada; un «Sí»
+    # viejo aprobaría lo que haya pendiente ahora. Sin `ev`, como antes de la build 68.
+    ev = str(args.get("ev") or "").strip()
+    if ev:
+        att = _attention_for(ident) or {}
+        if att.get("ev") != ev or (yes and att.get("state") != "needs_you"):
+            log(f"CLAUDE_ANSWER_STALE id={ident[:8]} state={att.get('state')}")
+            return {"error": "Esa pregunta ya no está pendiente: abre la sesión en la app.",
+                    "stale": "1"}
     pane = _claude_pane_for(ident)
     if pane:
         sock, target = pane
