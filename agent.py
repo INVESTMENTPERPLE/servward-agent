@@ -2153,12 +2153,23 @@ def cmd_tmux_scroll(args: dict) -> dict:
         n = 1
     try:
         info = _tmux("display-message", "-p", "-t", target,
-                     "#{mouse_any_flag}\x1f#{pane_width}\x1f#{pane_height}\x1f#{alternate_on}",
+                     "#{mouse_any_flag}\x1f#{pane_width}\x1f#{pane_height}\x1f#{alternate_on}\x1f#{pane_in_mode}",
                      socket=sock).strip().split("\x1f")
-        info += [""] * (4 - len(info))
+        info += [""] * (5 - len(info))
         mouse = info[0] == "1"
         cols = max(1, int(info[1] or 1)); rows = max(1, int(info[2] or 1))
-        if mouse:
+        if str(args.get("copy") or "") == "1" and info[3] != "1":
+            # copy=1 (terminal en vivo con el `mouse` de tmux apagado): el historial de tmux por su
+            # modo copia, que no depende de ese ajuste. Antes la app mandaba flechas, que en una
+            # shell recorren los comandos. `-e`: el modo copia se cierra solo al volver abajo.
+            in_mode = info[4] == "1"
+            if direction == "up" or in_mode:
+                if not in_mode:
+                    _tmux("copy-mode", "-e", "-t", target, socket=sock)
+                _tmux("send-keys", "-t", target, "-X", "-N", str(n),
+                      "scroll-up" if direction == "up" else "scroll-down", socket=sock)
+            via = "copy"
+        elif mouse:
             # Rueda SGR: ESC [ < 64 (arriba) | 65 (abajo) ; x ; y M, en el centro del pane.
             code = 64 if direction == "up" else 65
             seq = f"\x1b[<{code};{cols // 2 + 1};{rows // 2 + 1}M" * n
