@@ -2758,8 +2758,42 @@ def publish(req_id: str, status: str, data: dict):
     except Exception as e:
         log(f"PUBLISH_ERROR {e}")
 
+# ── Órdenes repetidas ───────────────────────────────────────────────────────
+# La app reenvía una orden con el MISMO req_id si no le llegó la respuesta (pasó a segundo
+# plano, cambió de red…). Ejecutarla otra vez repite lo que hace: el 12-ago apply_updates
+# corrió dos veces. Cada req_id de una orden que cambia algo se recuerda 5 min: si vuelve
+# mientras corre se ignora (la primera publicará) y si ya acabó se republica su respuesta.
+# Las lecturas no se recuerdan: repetirlas no hace nada y sus respuestas pueden ser grandes.
+DEDUP_TTL_S = 300
+DEDUP_EXEMPT = ALLOWED_RO | {
+    "tmux_sessions", "tmux_screen", "claude_transcript", "claude_usage", "screenshot",
+}
+_seen_lock = threading.Lock()
+_seen: dict = {}      # req_id -> [llegada, (status, data) o None mientras corre]
+
+
+def _seen_claim(req_id: str):
+    """("run", None) la primera vez; ("running", None) si ya corre; ("done", (status, data))."""
+    now = time.time()
+    with _seen_lock:
+        for k in [k for k, v in _seen.items() if now - v[0] > DEDUP_TTL_S]:
+            del _seen[k]
+        if req_id in _seen:
+            prev = _seen[req_id][1]
+            return ("done", prev) if prev is not None else ("running", None)
+        _seen[req_id] = [now, None]
+        return ("run", None)
+
+
+def _seen_done(req_id: str, status: str, data: dict):
+    with _seen_lock:
+        if req_id in _seen:
+            _seen[req_id][1] = (status, data)
+
+
 # ── Procesar comando ────────────────────────────────────────────────────────
 def handle(raw_msg: str):
+    claimed = ""
     try:
         msg    = json.loads(raw_msg)
         req_id = msg.get("id", "unknown")
@@ -2776,9 +2810,24 @@ def handle(raw_msg: str):
             log(f"RO_DENIED cmd={cmd} req_id={req_id}")
             publish(req_id, "error", {"error": "Token de solo lectura: comando de control no permitido"})
             return
-        publish(req_id, "ok", fn(args))
+        if cmd not in DEDUP_EXEMPT and req_id not in ("", "unknown"):
+            state, prev = _seen_claim(req_id)
+            if state == "running":
+                log(f"DUP_RUNNING cmd={cmd} req_id={req_id}")
+                return
+            if state == "done":
+                log(f"DUP_REPUBLISH cmd={cmd} req_id={req_id}")
+                publish(req_id, prev[0], prev[1])
+                return
+            claimed = req_id
+        data = fn(args)
+        if claimed:
+            _seen_done(claimed, "ok", data)
+        publish(req_id, "ok", data)
     except Exception as e:
         log(f"HANDLE_ERROR {e}")
+        if claimed:
+            _seen_done(claimed, "error", {"error": str(e)})
         try:
             publish(json.loads(raw_msg).get("id", "unknown"), "error", {"error": str(e)})
         except Exception:
