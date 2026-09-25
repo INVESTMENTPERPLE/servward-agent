@@ -490,15 +490,22 @@ def cmd_metrics_history(_args: dict) -> dict:
 
 # ── Actualizaciones del sistema (APT) ─────────────────────────────────────────
 def cmd_updates(_args: dict) -> dict:
+    """Actualizaciones pendientes por apt. Sin apt, o si apt no contesta de forma
+    reconocible («Listing...»), es un error: antes salía count 0 y la app decía «Todo al día»."""
     if not shutil.which("apt"):
-        return {"count": "0", "manager": "desconocido",
-                "info": "gestor de paquetes no soportado (solo apt)"}
+        return {"error": "No se pueden comprobar las actualizaciones: gestor de paquetes no soportado (solo apt)",
+                "manager": "desconocido"}
     try:
-        out = subprocess.run(["apt", "list", "--upgradable"],
-                             capture_output=True, text=True, timeout=30,
-                             env=dict(os.environ, LANG="C")).stdout
+        r = subprocess.run(["apt", "list", "--upgradable"],
+                           capture_output=True, text=True, timeout=30,
+                           env=dict(os.environ, LANG="C"))
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"No se pudieron comprobar las actualizaciones: {e}"[:200]}
+    if r.returncode != 0 or "Listing..." not in (r.stdout or ""):
+        why = (r.stderr or r.stdout or "").strip().splitlines()
+        return {"error": "No se pudieron comprobar las actualizaciones: "
+                         + (why[-1][:160] if why else f"código {r.returncode}")}
+    out = r.stdout
     pkgs, sec = [], 0
     for line in out.splitlines():
         line = line.strip()
