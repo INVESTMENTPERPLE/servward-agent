@@ -747,34 +747,53 @@ def cmd_metrics_history(_args: dict) -> dict:
 
 # ── Actualizaciones del sistema (Homebrew + macOS) ────────────────────────────
 def cmd_updates(_args: dict) -> dict:
-    brew_list, brew_n = [], 0
+    """Actualizaciones pendientes. Cada fuente solo cuenta si ha contestado de forma
+    reconocible: antes un fallo de brew o de softwareupdate contaba como 0 y la app decía
+    «Todo al día» sin haber podido mirar. Si no se pudo mirar nada, es un error."""
+    fails = []
+    brew_list, brew_ok = [], False
     if shutil.which("brew"):
         try:
-            out = subprocess.run(["brew", "outdated", "--quiet"],
-                                 capture_output=True, text=True, timeout=30).stdout.strip()
-            brew_list = [l.strip() for l in out.splitlines() if l.strip()]
-            brew_n = len(brew_list)
-        except Exception:
-            pass
-    os_list = []
+            # Sin auto-update: brew se actualizaba a sí mismo antes y se comía los 30 s.
+            r = subprocess.run(["brew", "outdated", "--quiet"], capture_output=True, text=True,
+                               timeout=30, env=dict(os.environ, HOMEBREW_NO_AUTO_UPDATE="1"))
+            if r.returncode == 0:
+                brew_list = [l.strip() for l in r.stdout.splitlines() if l.strip()]
+                brew_ok = True
+            else:
+                fails.append("Homebrew: " + ((r.stderr or r.stdout).strip()[:120] or f"código {r.returncode}"))
+        except Exception as e:
+            fails.append(f"Homebrew: {e}"[:140])
+    os_list, os_ok = [], False
     try:
         r = subprocess.run(["softwareupdate", "-l"],
                            capture_output=True, text=True, timeout=45)
-        for line in (r.stdout + r.stderr).splitlines():
+        out = (r.stdout or "") + (r.stderr or "")
+        for line in out.splitlines():
             line = line.strip()
             if line.startswith("* Label:"):
                 os_list.append(line.split("Label:", 1)[1].strip())
-    except Exception:
-        pass
+        # Solo vale si dice qué ha encontrado o que no hay nada; sin red dice otra cosa.
+        os_ok = bool(os_list) or "found the following" in out or "No new software available" in out
+        if not os_ok:
+            last = out.strip().splitlines()[-1] if out.strip() else f"código {r.returncode}"
+            fails.append(f"macOS: {last}"[:140])
+    except Exception as e:
+        fails.append(f"macOS: {e}"[:140])
+    if not brew_ok and not os_ok:
+        return {"error": "No se pudieron comprobar las actualizaciones. " + " · ".join(fails)}
     names = brew_list + [f"macOS: {x}" for x in os_list]
-    mgr = (["Homebrew"] if shutil.which("brew") else []) + ["macOS"]
-    return {
-        "count":   str(brew_n + len(os_list)),
-        "brew":    str(brew_n),
+    mgr = (["Homebrew"] if brew_ok else []) + (["macOS"] if os_ok else [])
+    d = {
+        "count":   str(len(brew_list) + len(os_list)),
+        "brew":    str(len(brew_list)),
         "system":  str(len(os_list)),
         "list":    "\n".join(names),
         "manager": " + ".join(mgr),
     }
+    if fails:
+        d["aviso"] = "Comprobación incompleta: " + " · ".join(fails)
+    return d
 
 def cmd_apply_updates(_args: dict) -> dict:
     """Actualiza los paquetes de Homebrew (espacio de usuario, sin sudo)."""
