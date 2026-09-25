@@ -13,6 +13,8 @@ Config por variables de entorno:
     NTFY_RESP_TOPIC   topic de respuestas    (def: resp-linux-prod)
     NTFY_DEVICE_NAME  nombre informativo     (def: hostname)
     ALLOW_POWER       "1" para permitir reboot/poweroff (def: desactivado)
+    ALLOW_CLAUDE_CONTROL "1" para responder/parar/arrancar sesiones de Claude Code
+                      (def: desactivado; NUNCA en un nodo de producción)
     SCRIPTS_DIR       carpeta de scripts permitidos (def: /opt/ntfy/scripts)
 """
 
@@ -22,15 +24,25 @@ import os
 import platform
 import re
 import shutil
+import select
 import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import threading
+import fcntl
+import pty
+import secrets
+import signal
+import struct
+import termios
+from urllib.parse import urlparse
 import time
 import urllib.request
 import urllib.error
 from collections import deque
+from datetime import datetime, timezone
 
 try:
     import psutil
@@ -821,6 +833,34 @@ def _to_ms(v) -> int:
         return 0
     return n * 1000 if 0 < n < 10_000_000_000 else n
 
+def _live_session_files() -> list:
+    """Fichas de sesión con proceso vivo (dicts)."""
+    out = []
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if isinstance(d, dict) and _pid_alive(d.get("pid")):
+            out.append(d)
+    return out
+
+def _parked_target(d: dict, live: list):
+    """Un terminal interactivo puede haber «aparcado» su sesión en un trabajo en segundo
+    plano (`parkedJobId`): el proceso que trabaja de verdad es otro, con otro id. Devuelve
+    la ficha de ese trabajo si sigue vivo, o None."""
+    job = str(d.get("parkedJobId") or "")
+    if not job:
+        return None
+    for t in live:
+        if str(t.get("jobId") or "") == job and t is not d:
+            return t
+    return None
+
+def _effective_id(d: dict, live: list) -> str:
+    """Id vivo de una ficha: el de su sesión aparcada si la hay, si no el aprendido del hook
+    para su PID, si no el de la ficha."""
+    t = _parked_target(d, live)
+    src = t if t else d
+    return _live_session_id(src.get("pid"), str(src.get("sessionId") or src.get("pid") or ""))
+
 def cmd_claude_sessions(_args: dict) -> dict:
     """Sesiones de Claude Code en esta máquina: vivas (interactivas y en segundo plano)
     y trabajos en segundo plano recientes, con su estado. Devuelve la lista como JSON en
@@ -830,23 +870,39 @@ def cmd_claude_sessions(_args: dict) -> dict:
     now_ms = int(time.time() * 1000)
     out: list = []
 
-    # 1) Sesiones vivas: la ficha existe y el PID sigue ahí.
-    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
-        d = _read_json_file(path)
-        if not isinstance(d, dict) or not _pid_alive(d.get("pid")):
+    # 1) Sesiones vivas: la ficha existe y el PID sigue ahí. Un terminal con sesión
+    #    aparcada representa a esa sesión (nombre, estado e id del trabajo), que no se
+    #    lista dos veces.
+    live = _live_session_files()
+    parked_jobs = {str(d.get("parkedJobId")) for d in live if d.get("parkedJobId")}
+    for d in live:
+        if d.get("kind") == "bg" and str(d.get("jobId") or "") in parked_jobs:
             continue
-        status = d.get("status")
+        t = _parked_target(d, live)
+        src = t if t else d
+        status = src.get("status")
+        eff_id = _effective_id(d, live)
+        state = {"busy": "working", "idle": "idle"}.get(status, "unknown")
+        detail = ""
+        att = _attention_for(eff_id)
+        if att:
+            detail = str(att.get("detail") or "")
+            if att.get("state") == "needs_you":
+                state = "blocked"
+            elif att.get("state") == "working" and state == "unknown":
+                state = "working"
         out.append({
-            "id":         str(d.get("sessionId") or d.get("pid")),
-            "name":       str(d.get("name") or d.get("pid")),
+            "id":         eff_id,
+            "name":       str(src.get("name") or d.get("name") or d.get("pid")),
             "kind":       "bg" if d.get("kind") == "bg" else "interactive",
-            "state":      {"busy": "working", "idle": "idle"}.get(status, "unknown"),
-            "cwd":        str(d.get("cwd") or ""),
+            "state":      state,
+            "cwd":        str(src.get("cwd") or d.get("cwd") or ""),
             "started_ms": _to_ms(d.get("startedAt")),
-            "updated_ms": _to_ms(d.get("updatedAt") or d.get("startedAt")),
+            "updated_ms": max(_to_ms(src.get("updatedAt") or d.get("updatedAt") or d.get("startedAt")),
+                              int(att.get("ts", 0)) * 1000 if att else 0),
             "pid":        int(d.get("pid") or 0),
-            "job_id":     str(d.get("jobId") or ""),
-            "detail":     "",
+            "job_id":     str(src.get("jobId") or d.get("jobId") or ""),
+            "detail":     detail,
         })
 
     # 2) Trabajos en segundo plano: afinan el estado (bloqueado, terminado) y aportan el
@@ -861,16 +917,23 @@ def cmd_claude_sessions(_args: dict) -> dict:
         if state in ("done", "stopped") and now_ms - updated > CLAUDE_JOBS_RECENT_S * 1000:
             continue
         detail = str(d.get("detail") or "")[:200]
+        # «blocked» con tempo «active» (o tareas en vuelo) es un trabajo ejecutando una
+        # herramienta, no uno que espera respuesta.
+        in_flight = int(((d.get("inFlight") or {}).get("tasks") or 0) if isinstance(d.get("inFlight"), dict) else 0)
+        waiting = state == "blocked" and str(d.get("tempo") or "") != "active" and in_flight == 0
         live = next((s for s in out if s["job_id"] == job_id), None)
         if live is not None:
-            live["detail"] = detail
-            if state == "blocked":
+            if detail and not live.get("detail"):
+                live["detail"] = detail
+            if waiting:
                 live["state"] = "blocked"
+            elif state == "blocked" and live["state"] == "blocked" and not _attention_for(live["id"]):
+                live["state"] = "working"
             if d.get("name"):
                 live["name"] = str(d["name"])
             continue
         # Sin sesión viva: si el fichero dice "running", el proceso ya no está → unknown.
-        mapped = {"running": "unknown", "blocked": "blocked",
+        mapped = {"running": "unknown", "blocked": "blocked" if waiting else "unknown",
                   "done": "done", "stopped": "stopped"}.get(state, "unknown")
         out.append({
             "id":         str(d.get("sessionId") or job_id),
@@ -892,6 +955,1730 @@ def cmd_claude_sessions(_args: dict) -> dict:
         "sessions": json.dumps(out, ensure_ascii=False),
     }
 
+# ── Conversación y control de sesiones de Claude Code ────────────────────────
+# claude_transcript LEE la conversación de una sesión (~/.claude/projects/*/<id>.jsonl).
+# claude_reply / claude_stop / claude_start CONTROLAN sesiones con el CLI `claude`:
+# solo funcionan si el nodo arranca con ALLOW_CLAUDE_CONTROL=1 (nunca en producción).
+# Mecanismo verificado (3-sep-2026): `claude stop <job>` y después
+# `claude --bg --resume <sessionId> "<texto>"` continúa la MISMA sesión; sin el stop
+# previo, `--resume` de una sesión viva arranca una copia. `stop` toma el id corto del
+# trabajo y `--resume` el sessionId completo (pueden no coincidir).
+ALLOW_CLAUDE_CONTROL = os.environ.get("ALLOW_CLAUDE_CONTROL", "0").strip() == "1"
+CLAUDE_BIN            = os.environ.get("CLAUDE_BIN", "").strip()
+CLAUDE_START_FLAGS    = os.environ.get("CLAUDE_START_FLAGS", "--permission-mode auto").split()
+CLAUDE_TAIL_BYTES     = int(os.environ.get("CLAUDE_TAIL_BYTES", str(6 * 1024 * 1024)))
+CLAUDE_TEXT_MAX       = 20_000     # caracteres máximos de un mensaje enviado desde la app
+_CLAUDE_BG_ID_RE      = re.compile(r"·\s*([0-9a-f]{8})\b")
+_CLAUDE_REMINDER_RE   = re.compile(r"<system-reminder>.*?</system-reminder>", re.S)
+
+def _claude_bin() -> str:
+    if CLAUDE_BIN and os.access(CLAUDE_BIN, os.X_OK):
+        return CLAUDE_BIN
+    extra = os.pathsep.join([os.path.expanduser("~/.local/bin"), "/opt/homebrew/bin",
+                             "/usr/local/bin", os.environ.get("PATH", "")])
+    return shutil.which("claude", path=extra) or ""
+
+def _claude_control_blocked():
+    """Motivo por el que no se puede controlar sesiones en este nodo, o None."""
+    if not ALLOW_CLAUDE_CONTROL:
+        return {"bloqueado": "control de sesiones desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if not _claude_bin():
+        return {"error": "no encuentro el CLI `claude` en esta máquina (CLAUDE_BIN)"}
+    return None
+
+def _claude_find(ident: str):
+    """Localiza una sesión por sessionId, id corto de trabajo o PID. Devuelve dict con
+    session_id, job_id, kind, cwd, pid (0 si no vive) y name; o None si no existe."""
+    ident = str(ident or "").strip()
+    if not ident:
+        return None
+    found = None
+    live = _live_session_files()
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        alive = _pid_alive(d.get("pid"))
+        live_id = _effective_id(d, live) if alive else str(d.get("sessionId") or "")
+        t = _parked_target(d, live) if alive else None
+        if ident in (str(d.get("sessionId")), str(d.get("jobId")), str(d.get("pid")), live_id,
+                     str(d.get("parkedJobId") or "")):
+            src = t if t else d
+            found = {"session_id": live_id,
+                     "job_id": str(src.get("jobId") or d.get("jobId") or ""),
+                     "kind": "bg" if d.get("kind") == "bg" else "interactive",
+                     "cwd": str(src.get("cwd") or d.get("cwd") or ""), "pid": int(d.get("pid") or 0) if alive else 0,
+                     "name": str(src.get("name") or d.get("name") or "")}
+            if alive:
+                return found
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "jobs", "*", "state.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        job_id = os.path.basename(os.path.dirname(path))
+        sid = str(d.get("resumeSessionId") or d.get("sessionId") or "")
+        if ident in (job_id, sid):
+            return {"session_id": sid, "job_id": job_id, "kind": "bg",
+                    "cwd": str(d.get("cwd") or ""), "pid": found["pid"] if found else 0,
+                    "name": str(d.get("name") or job_id)}
+    if found is None:
+        # Sin ficha viva ni trabajo: puede ser un sessionId cuyo transcript aún existe.
+        if _claude_transcript_path(ident):
+            found = {"session_id": ident, "job_id": "", "kind": "bg", "cwd": "", "pid": 0, "name": ident}
+    return found
+
+def _claude_transcript_path(session_id: str) -> str:
+    if not re.fullmatch(r"[0-9a-fA-F-]{8,64}", session_id or ""):
+        return ""
+    hits = glob.glob(os.path.join(CLAUDE_DIR, "projects", "*", f"{session_id}.jsonl"))
+    if not hits:
+        return ""
+    return max(hits, key=lambda p: os.path.getmtime(p))
+
+def _tail_lines(path: str, max_bytes: int):
+    """Últimas líneas completas de un fichero grande sin leerlo entero.
+    Devuelve (líneas, truncado)."""
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        if size > max_bytes:
+            f.seek(size - max_bytes)
+            data = f.read()
+            data = data[data.find(b"\n") + 1:]        # descarta la línea partida
+            truncated = True
+        else:
+            data = f.read()
+            truncated = False
+    return data.decode("utf-8", "replace").splitlines(), truncated
+
+def _iso_to_ms(s) -> int:
+    """Los timestamps del transcript son UTC ('…Z'); se devuelven en ms de época."""
+    try:
+        dt = datetime.strptime(str(s)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+    except (TypeError, ValueError):
+        return 0
+
+def _claude_tool_summary(block: dict) -> str:
+    name = str(block.get("name") or "herramienta")
+    inp = block.get("input") or {}
+    if not isinstance(inp, dict):
+        return name
+    for key in ("description", "command", "file_path", "pattern", "prompt", "query", "skill"):
+        v = inp.get(key)
+        if isinstance(v, str) and v.strip():
+            return f"{name}: {v.strip().splitlines()[0][:160]}"
+    return name
+
+def _claude_messages(lines, max_chars: int) -> list:
+    """Convierte líneas del jsonl en mensajes legibles: lo que dijo la persona, lo que
+    contestó Claude y qué herramientas usó. Fuera: pensamiento, resultados de
+    herramientas, mensajes internos (skills, recordatorios) y subagentes."""
+    out = []
+    for line in lines:
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        typ = d.get("type")
+        if typ not in ("user", "assistant") or d.get("isSidechain"):
+            continue
+        msg = d.get("message") or {}
+        content = msg.get("content")
+        ts = _iso_to_ms(d.get("timestamp"))
+        uid = str(d.get("uuid") or "")
+        if typ == "user":
+            if d.get("isMeta"):
+                continue
+            if isinstance(content, str):
+                text = content
+            elif isinstance(content, list):
+                if any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+                    continue
+                text = "\n".join(str(b.get("text") or "") for b in content
+                                 if isinstance(b, dict) and b.get("type") == "text")
+            else:
+                continue
+            text = _CLAUDE_REMINDER_RE.sub("", text).strip()
+            if not text or text.startswith("<"):
+                continue
+            out.append({"id": uid, "role": "user", "kind": "text", "text": text[:max_chars], "ts_ms": ts})
+            continue
+        if not isinstance(content, list):
+            continue
+        texts = []
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "text" and str(b.get("text") or "").strip():
+                texts.append(str(b["text"]).strip())
+            elif b.get("type") == "tool_use":
+                out.append({"id": uid + ":" + str(b.get("id") or ""), "role": "assistant", "kind": "tool",
+                            "text": _claude_tool_summary(b), "ts_ms": ts})
+        if texts:
+            out.append({"id": uid, "role": "assistant", "kind": "text",
+                        "text": "\n\n".join(texts)[:max_chars], "ts_ms": ts})
+    return out
+
+def cmd_claude_transcript(args: dict) -> dict:
+    """Conversación de una sesión (las últimas `limit` entradas), como JSON en 'messages'."""
+    ident = str(args.get("id") or "").strip()
+    if not ident:
+        return {"error": "falta 'id' (sessionId o id del trabajo)"}
+    try:
+        limit = max(1, min(int(args.get("limit") or 40), 200))
+        max_chars = max(200, min(int(args.get("max_chars") or 2500), 20_000))
+    except (TypeError, ValueError):
+        return {"error": "'limit' y 'max_chars' deben ser números"}
+    info = _claude_find(ident)
+    if info is None:
+        return {"error": f"no hay ninguna sesión '{ident[:24]}' en esta máquina"}
+    path = _claude_transcript_path(info["session_id"])
+    if not path:
+        return {"error": "esta sesión no tiene transcript en disco todavía"}
+    lines, truncated = _tail_lines(path, CLAUDE_TAIL_BYTES)
+    msgs = _claude_messages(lines, max_chars)
+    total = len(msgs)
+    msgs = msgs[-limit:]
+    state = "unknown"
+    for s in json.loads(cmd_claude_sessions({}).get("sessions") or "[]"):
+        if s["id"] == info["session_id"] or (info["job_id"] and s["job_id"] == info["job_id"]):
+            state = s["state"]
+            break
+    return {
+        "id":        info["session_id"],
+        "job_id":    info["job_id"],
+        "name":      info["name"],
+        "kind":      info["kind"],
+        "cwd":       info["cwd"],
+        "state":     state,
+        "alive":     "1" if info["pid"] else "0",
+        "control":   "1" if ALLOW_CLAUDE_CONTROL else "0",
+        "count":     str(len(msgs)),
+        "total":     str(total),
+        "truncated": "1" if (truncated or total > limit) else "0",
+        "messages":  json.dumps(msgs, ensure_ascii=False),
+    }
+
+def _claude_run(argv: list, cwd: str, timeout: int = 90) -> tuple:
+    """Ejecuta el CLI `claude` sin shell (los textos van como argumentos, nunca se
+    interpolan). stdout/stderr van a fichero para que el demonio que deja detrás
+    `--bg` no mantenga una tubería abierta y bloquee la espera."""
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([os.path.dirname(_claude_bin()), env.get("PATH", "")])
+    env.setdefault("HOME", os.path.expanduser("~"))
+    if not (cwd and os.path.isdir(cwd)):
+        cwd = os.path.expanduser("~")
+    with tempfile.TemporaryFile() as out:
+        try:
+            rc = subprocess.run([_claude_bin()] + argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                stdout=out, stderr=subprocess.STDOUT, timeout=timeout).returncode
+        except subprocess.TimeoutExpired:
+            rc = -1
+        out.seek(0)
+        text = out.read().decode("utf-8", "replace").strip()
+    return rc, text
+
+def _claude_wait_gone(pid: int, seconds: float) -> bool:
+    end = time.time() + seconds
+    while time.time() < end:
+        if not pid or not _pid_alive(pid):
+            return True
+        time.sleep(0.3)
+    return not _pid_alive(pid)
+
+def _claude_stop_job(info: dict) -> dict:
+    """`claude stop <job>` y espera a que el proceso muera. Devuelve {'ok':...} o {'error':...}."""
+    if not info["job_id"]:
+        return {"error": "solo se pueden parar sesiones en segundo plano (esta no tiene id de trabajo)"}
+    rc, text = _claude_run(["stop", info["job_id"]], info["cwd"], timeout=60)
+    if rc != 0:
+        return {"error": f"claude stop devolvió {rc}: {text[:300]}"}
+    if not _claude_wait_gone(info["pid"], 20):
+        return {"error": f"claude stop no ha terminado el proceso {info['pid']} en 20 s"}
+    return {"ok": "1", "output": text[:300]}
+
+def cmd_claude_stop(args: dict) -> dict:
+    """Para una sesión en segundo plano (la conversación se conserva)."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    info = _claude_find(str(args.get("id") or ""))
+    if info is None:
+        return {"error": "sesión no encontrada"}
+    if info["kind"] == "interactive" and info["pid"]:
+        return {"error": "es una sesión interactiva en un terminal: se cierra desde allí"}
+    if not info["pid"]:
+        return {"ok": "1", "info": "la sesión ya no estaba en marcha", "job_id": info["job_id"]}
+    log(f"CLAUDE_STOP job={info['job_id']} session={info['session_id'][:8]}")
+    res = _claude_stop_job(info)
+    res.setdefault("job_id", info["job_id"])
+    return res
+
+def cmd_claude_reply(args: dict) -> dict:
+    """Manda un mensaje a una sesión existente: la para si sigue viva y la continúa en
+    segundo plano con `--resume` (misma conversación, mismo id)."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    text = str(args.get("text") or "").strip()
+    if not text:
+        return {"error": "falta 'text'"}
+    if len(text) > CLAUDE_TEXT_MAX:
+        return {"error": f"mensaje demasiado largo (máximo {CLAUDE_TEXT_MAX} caracteres)"}
+    info = _claude_find(str(args.get("id") or ""))
+    if info is None or not info["session_id"]:
+        return {"error": "sesión no encontrada"}
+    if info["kind"] == "interactive" and info["pid"]:
+        return {"error": "es una sesión interactiva en un terminal: `--resume` abriría una copia. Respóndele allí"}
+    if info["pid"]:
+        stopped = _claude_stop_job(info)
+        if "error" in stopped:
+            return stopped
+    log(f"CLAUDE_REPLY session={info['session_id'][:8]} chars={len(text)}")
+    rc, out = _claude_run(["--bg", "--resume", info["session_id"], text], info["cwd"], timeout=120)
+    m = _CLAUDE_BG_ID_RE.search(out)
+    if rc != 0 or not m:
+        return {"error": f"claude --resume devolvió {rc}: {out[:300] or 'sin salida'}"}
+    return {"ok": "1", "id": info["session_id"], "job_id": m.group(1), "output": out.splitlines()[0][:200]}
+
+def cmd_claude_start(args: dict) -> dict:
+    """Arranca una sesión nueva en segundo plano con una tarea (`claude --bg "<texto>"`)."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    text = str(args.get("text") or "").strip()
+    if not text:
+        return {"error": "falta 'text' (la tarea)"}
+    if len(text) > CLAUDE_TEXT_MAX:
+        return {"error": f"tarea demasiado larga (máximo {CLAUDE_TEXT_MAX} caracteres)"}
+    cwd = os.path.expanduser(str(args.get("cwd") or "").strip()) or os.path.expanduser("~")
+    if not os.path.isdir(cwd):
+        return {"error": f"la carpeta no existe: {cwd[:120]}"}
+    name = str(args.get("name") or "").strip()[:80]
+    argv = ["--bg"] + CLAUDE_START_FLAGS + (["-n", name] if name else []) + [text]
+    log(f"CLAUDE_START cwd={cwd} name={name!r} chars={len(text)}")
+    rc, out = _claude_run(argv, cwd, timeout=120)
+    m = _CLAUDE_BG_ID_RE.search(out)
+    if rc != 0 or not m:
+        return {"error": f"claude --bg devolvió {rc}: {out[:300] or 'sin salida'}"}
+    job_id = m.group(1)
+    # El sessionId de la sesión nueva sale en su ficha en cuanto arranca.
+    session_id = ""
+    for _ in range(20):
+        found = _claude_find(job_id)
+        if found and found["session_id"]:
+            session_id = found["session_id"]
+            break
+        time.sleep(0.25)
+    return {"ok": "1", "id": session_id or job_id, "job_id": job_id, "cwd": cwd,
+            "output": out.splitlines()[0][:200]}
+
+# ── Terminales tmux (el terminal del móvil) ───────────────────────────────────
+# Mismo bloque que agent.py salvo dos diferencias de este fichero: aquí `log()` es una
+# función (no un logger) y `send_push(title, body)` no lleva datos extra.
+# El móvil ve la MISMA sesión tmux que hay en el escritorio: tmux_screen devuelve la
+# pantalla (con colores) y tmux_keys teclea en ella. Escribir en un terminal es control
+# total de la máquina, así que tmux_keys / tmux_new / tmux_kill exigen
+# ALLOW_CLAUDE_CONTROL=1 igual que el control de sesiones. Leer la pantalla es solo con
+# token de control (no está en ALLOWED_RO).
+TMUX_BIN    = os.environ.get("TMUX_BIN", "").strip()
+TMUX_SOCKET = os.environ.get("TMUX_SOCKET", "").strip()      # -L <nombre>, opcional
+TMUX_SCROLLBACK_MAX = 2000
+_TMUX_TARGET_RE = re.compile(r"^[A-Za-z0-9_.:%@$\-]{1,120}$")
+_TMUX_KEY_RE    = re.compile(r"^[A-Za-z0-9\-]{1,12}$")
+_TMUX_SESSION_RE = re.compile(r"^[A-Za-z0-9_\-]{1,60}$")
+
+def _tmux_bin() -> str:
+    if TMUX_BIN and os.access(TMUX_BIN, os.X_OK):
+        return TMUX_BIN
+    extra = os.pathsep.join(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", os.environ.get("PATH", "")])
+    return shutil.which("tmux", path=extra) or ""
+
+_TMUX_SOCKET_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,60}$")
+
+def _tmux(*args, socket: str = "", timeout: int = 10) -> str:
+    """Ejecuta tmux contra un socket concreto (-L nombre). Sin socket: el por defecto."""
+    sock = socket or TMUX_SOCKET
+    argv = [_tmux_bin()] + (["-L", sock] if sock else []) + list(args)
+    return subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                          check=True).stdout
+
+def _tmux_sockets() -> list:
+    """Nombres de los sockets tmux del usuario: cada programa que lanza su propio
+    servidor tmux (nodeterm, por ejemplo) usa uno distinto y sus sesiones no se ven
+    desde el socket por defecto. Carpeta: $TMUX_TMPDIR/tmux-<uid> o /tmp/tmux-<uid>."""
+    base = os.environ.get("TMUX_TMPDIR") or "/tmp"
+    d = os.path.join(base, f"tmux-{os.getuid()}")
+    names = []
+    try:
+        for n in sorted(os.listdir(d)):
+            p = os.path.join(d, n)
+            try:
+                import stat as _stat
+                if _stat.S_ISSOCK(os.stat(p).st_mode) and _TMUX_SOCKET_RE.match(n):
+                    names.append(n)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    if "default" in names:
+        names.remove("default"); names.insert(0, "default")
+    return names or ["default"]
+
+def _tmux_missing():
+    if not _tmux_bin():
+        return {"error": "tmux no está instalado en esta máquina"}
+    return None
+
+def _tmux_target_ok(t: str) -> bool:
+    return bool(t) and bool(_TMUX_TARGET_RE.match(t))
+
+def _tmux_socket_arg(args: dict):
+    """Socket pedido por la app ('' = por defecto) o None si el nombre no vale."""
+    s = str(args.get("socket") or "").strip()
+    if s and not _TMUX_SOCKET_RE.match(s):
+        return None
+    return s
+
+def _claude_by_tmux_pane() -> dict:
+    """pane_id (%N) → sesión de Claude viva que corre dentro de ese pane."""
+    out = {}
+    live = _live_session_files()
+    for d in live:
+        if not d.get("tmux"):
+            continue
+        pane = str(d["tmux"]).rsplit(".", 1)[-1]          # "sess:@1.%1" → "%1"
+        src = _parked_target(d, live) or d
+        out[pane] = {"id": _effective_id(d, live),
+                     "name": str(src.get("name") or d.get("name") or ""),
+                     "state": {"busy": "working", "idle": "idle"}.get(src.get("status"), "unknown"),
+                     "job_id": str(src.get("jobId") or d.get("jobId") or "")}
+    return out
+
+def cmd_tmux_sessions(_args: dict) -> dict:
+    """Panes de tmux de esta máquina (uno por terminal) con el programa que corre,
+    la carpeta, el tamaño y, si dentro va Claude Code, su sesión. JSON en 'panes'."""
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    fmt = "\x1f".join(["#{session_name}", "#{window_index}", "#{pane_index}", "#{pane_id}",
+                       "#{pane_pid}", "#{pane_current_command}", "#{pane_current_path}",
+                       "#{pane_width}", "#{pane_height}", "#{session_attached}",
+                       "#{session_activity}", "#{pane_title}", "#{history_size}",
+                       "#{session_created}"])
+    claude = _claude_by_tmux_pane()
+    panes = []
+    errors = []
+    for sock in _tmux_sockets():
+        try:
+            raw = _tmux("list-panes", "-a", "-F", fmt, socket=sock)
+        except subprocess.CalledProcessError as e:
+            err = (e.stderr or "").strip()
+            if "no server running" in err or "error connecting" in err:
+                continue                              # socket huérfano o sin servidor
+            errors.append(f"{sock}: {err[:120]}")
+            continue
+        except (OSError, subprocess.TimeoutExpired) as e:
+            errors.append(f"{sock}: {e}"[:120])
+            continue
+        for line in raw.splitlines():
+            f = line.split("\x1f")
+            if len(f) < 14:
+                continue
+            cl = claude.get(f[3], {})
+            panes.append({
+                "socket":      "" if sock == "default" else sock,
+                "target":      f"{f[0]}:{f[1]}.{f[2]}",
+                "session":     f[0],
+                "pane_id":     f[3],
+                "pid":         int(f[4] or 0),
+                "command":     f[5],
+                "cwd":         f[6],
+                "cols":        int(f[7] or 0),
+                "rows":        int(f[8] or 0),
+                "attached":    f[9] not in ("", "0"),
+                "activity_ms": _to_ms(f[10]),
+                "created_ms":  _to_ms(f[13]),
+                "title":       f[11].strip(),
+                "history":     int(f[12] or 0),
+                "claude_id":   cl.get("id", ""),
+                "claude_name": cl.get("name", ""),
+                "claude_state": cl.get("state", ""),
+                "claude_job":  cl.get("job_id", ""),
+            })
+    panes.sort(key=lambda p: -p["activity_ms"])
+    out = {"count": str(len(panes)), "host": platform.node(),
+           "control": "1" if ALLOW_CLAUDE_CONTROL else "0",
+           "panes": json.dumps(panes, ensure_ascii=False)}
+    if errors:
+        out["warning"] = "; ".join(errors)[:300]
+    return out
+
+def _tmux_capture(target: str, sock: str, back: int = 0, plain: bool = False) -> dict:
+    """Pantalla de un pane (dict de tmux_screen) o {'error': …}."""
+    cap = ["capture-pane", "-p", "-J", "-t", target]
+    if not plain:
+        cap.append("-e")
+    if back:
+        cap += ["-S", f"-{back}"]
+    try:
+        screen = _tmux(*cap, socket=sock)
+        info = _tmux("display-message", "-p", "-t", target,
+                     "#{pane_width}\x1f#{pane_height}\x1f#{cursor_x}\x1f#{cursor_y}\x1f"
+                     "#{pane_in_mode}\x1f#{alternate_on}\x1f#{history_size}\x1f#{pane_title}\x1f"
+                     "#{pane_current_command}\x1f#{pane_dead}", socket=sock).strip().split("\x1f")
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "pane no encontrado").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    info += [""] * (10 - len(info))
+    return {
+        "target":   target,
+        "screen":   screen.rstrip("\n"),
+        "cols":     info[0], "rows": info[1],
+        "cursor_x": info[2], "cursor_y": info[3],
+        "in_mode":  info[4], "alternate": info[5],
+        "history":  info[6], "title": info[7], "command": info[8],
+        "dead":     info[9] or "0",
+        "back":     str(back),
+    }
+
+def cmd_tmux_screen(args: dict) -> dict:
+    """Pantalla actual de un pane, con colores ANSI (SGR) salvo plain=1. `back` = líneas
+    de scrollback por encima de la pantalla (0-2000)."""
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target' (sesión:ventana.pane)"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    try:
+        back = max(0, min(int(args.get("back") or 0), TMUX_SCROLLBACK_MAX))
+    except (TypeError, ValueError):
+        back = 0
+    return _tmux_capture(target, sock, back, str(args.get("plain") or "") == "1")
+
+# ── Terminal de verdad en el móvil: cliente tmux en un pseudoterminal, bytes por WebSocket ──
+# Mismo bloque que agent.py (aquí `log()` es función y SSL_CTX es un contexto normal).
+TERM_MAX_OPEN   = 6
+_TERM_CHAN_RE   = re.compile(r"^[A-Za-z0-9_\-]{8,64}$")
+_TERM_OPEN: dict = {}
+_TERM_LOCK = threading.Lock()
+
+def _ws_connect(url: str, headers: dict, timeout: int = 15):
+    """Negocia un WebSocket (ws:// o wss://). Devuelve (socket, resto ya recibido)."""
+    u = urlparse(url)
+    secure = u.scheme in ("wss", "https")
+    host = u.hostname or "127.0.0.1"
+    port = u.port or (443 if secure else 80)
+    path = (u.path or "/") + ("?" + u.query if u.query else "")
+    raw = socket.create_connection((host, port), timeout=timeout)
+    sock = SSL_CTX.wrap_socket(raw, server_hostname=host) if secure else raw
+    key = base64.b64encode(secrets.token_bytes(16)).decode()
+    lines = [f"GET {path} HTTP/1.1", f"Host: {host}:{port}", "Upgrade: websocket", "Connection: Upgrade",
+             f"Sec-WebSocket-Key: {key}", "Sec-WebSocket-Version: 13"]
+    lines += [f"{k}: {v}" for k, v in headers.items()]
+    sock.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
+    resp = b""
+    while b"\r\n\r\n" not in resp:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise OSError("el broker cerró durante el apretón de manos")
+        resp += chunk
+        if len(resp) > 65536:
+            raise OSError("respuesta de apretón de manos demasiado larga")
+    head, _, rest = resp.partition(b"\r\n\r\n")
+    status = head.split(b"\r\n")[0].decode("utf-8", "replace")
+    if " 101 " not in status:
+        raise OSError(f"el broker rechazó el WebSocket: {status[:80]}")
+    sock.settimeout(None)
+    return sock, rest
+
+def _ws_send(sock, wlock, opcode: int, payload: bytes):
+    n = len(payload)
+    head = bytes([0x80 | opcode])
+    if n < 126:
+        head += bytes([0x80 | n])
+    elif n < 65536:
+        head += bytes([0x80 | 126]) + struct.pack(">H", n)
+    else:
+        head += bytes([0x80 | 127]) + struct.pack(">Q", n)
+    mask = secrets.token_bytes(4)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    with wlock:
+        sock.sendall(head + mask + masked)
+
+class _WSReader:
+    def __init__(self, sock, rest: bytes):
+        self.sock = sock
+        self.buf = rest
+
+    def _read(self, n: int) -> bytes:
+        while len(self.buf) < n:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                return b""
+            self.buf += chunk
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def frame(self, on_ping):
+        message, msg_op = b"", None
+        while True:
+            h = self._read(2)
+            if len(h) < 2:
+                return None
+            fin, op, n = h[0] & 0x80, h[0] & 0x0F, h[1] & 0x7F
+            masked = h[1] & 0x80
+            if n == 126:
+                n = struct.unpack(">H", self._read(2))[0]
+            elif n == 127:
+                n = struct.unpack(">Q", self._read(8))[0]
+            key = self._read(4) if masked else b""
+            data = self._read(n) if n else b""
+            if n and len(data) < n:
+                return None
+            if masked:
+                data = bytes(b ^ key[i % 4] for i, b in enumerate(data))
+            if op == 0x8:
+                return None
+            if op == 0x9:
+                on_ping(data); continue
+            if op == 0xA:
+                continue
+            if op in (0x1, 0x2):
+                msg_op, message = op, data
+            elif op == 0x0:
+                message += data
+            else:
+                continue
+            if fin:
+                return (msg_op or 0x2, message)
+
+def _term_cleanup(chan: str):
+    with _TERM_LOCK:
+        t = _TERM_OPEN.pop(chan, None)
+    if not t:
+        return
+    for fn in (lambda: os.killpg(os.getpgid(t["pid"]), signal.SIGHUP),
+               lambda: os.close(t["master"]),
+               lambda: t["sock"].close()):
+        try:
+            fn()
+        except Exception:
+            pass
+    log(f"TERM_CLOSE chan={chan[:12]} target={t['target']}")
+
+def _term_pump(chan: str, t: dict, reader: _WSReader):
+    sock, master, wlock = t["sock"], t["master"], t["wlock"]
+
+    def out_loop():
+        try:
+            while True:
+                data = os.read(master, 65536)
+                if not data:
+                    break
+                # Un redibujado sale del pty en varios trozos: se juntan hasta que el bloque
+                # sincronizado de tmux está cerrado (tantos «h» como «l» de DEC 2026); si el
+                # trozo no trae marcas se espera 8 ms por si viene más. Tope: 256 KB / 40 ms.
+                deadline = time.monotonic() + 0.040
+                while len(data) < 262144 and time.monotonic() < deadline:
+                    opened = data.count(b"\x1b[?2026h")
+                    if opened and opened == data.count(b"\x1b[?2026l"):
+                        break
+                    r, _, _ = select.select([master], [], [], 0.008)
+                    if not r:
+                        break
+                    more = os.read(master, 65536)
+                    if not more:
+                        break
+                    data += more
+                _ws_send(sock, wlock, 0x2, data)
+        except Exception:
+            pass
+        _term_cleanup(chan)
+
+    def ping_loop():
+        while chan in _TERM_OPEN:
+            time.sleep(20)
+            try:
+                _ws_send(sock, wlock, 0x9, b"")
+            except Exception:
+                break
+
+    threading.Thread(target=out_loop, daemon=True, name=f"term-out-{chan[:6]}").start()
+    threading.Thread(target=ping_loop, daemon=True, name=f"term-ping-{chan[:6]}").start()
+    try:
+        while True:
+            fr = reader.frame(lambda d: _ws_send(sock, wlock, 0xA, d))
+            if fr is None:
+                break
+            op, data = fr
+            if op == 0x1 and data[:1] == b"{":
+                try:
+                    ctl = json.loads(data.decode("utf-8", "replace"))
+                except ValueError:
+                    ctl = {}
+                if "cols" in ctl and "rows" in ctl:
+                    cols = max(20, min(int(ctl["cols"]), 400)); rows = max(5, min(int(ctl["rows"]), 200))
+                    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+                continue
+            os.write(master, data)
+    except Exception as e:
+        log(f"TERM_PUMP chan={chan[:12]} {e}")
+    _term_cleanup(chan)
+
+def cmd_term_open(args: dict) -> dict:
+    """Abre un terminal en vivo para el móvil: `target`, `socket`, `chan`, `cols`/`rows` opcionales."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "el terminal en vivo está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    sock_name = _tmux_socket_arg(args)
+    if sock_name is None:
+        return {"error": "socket no válido"}
+    chan = str(args.get("chan") or "").strip()
+    if not _TERM_CHAN_RE.match(chan):
+        return {"error": "canal no válido"}
+    session = target.split(":", 1)[0]
+    try:
+        info = _tmux("display-message", "-p", "-t", target, "#{pane_width}\x1f#{pane_height}",
+                     socket=sock_name).strip().split("\x1f")
+        cols, rows = int(info[0]), int(info[1])
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired, ValueError, IndexError) as e:
+        return {"error": f"pane no encontrado: {e}"[:160]}
+    try:
+        if args.get("cols"): cols = max(20, min(int(args["cols"]), 400))
+        if args.get("rows"): rows = max(5, min(int(args["rows"]), 200))
+    except (TypeError, ValueError):
+        pass
+    with _TERM_LOCK:
+        if chan in _TERM_OPEN:
+            return {"ok": "1", "chan": chan, "cols": str(cols), "rows": str(rows), "info": "ya abierto"}
+        if len(_TERM_OPEN) >= TERM_MAX_OPEN:
+            return {"error": f"ya hay {TERM_MAX_OPEN} terminales en vivo abiertos"}
+        _TERM_OPEN[chan] = {"pid": 0, "master": -1, "sock": None, "target": target, "started": time.time(), "wlock": threading.Lock()}
+    try:
+        master, slave = pty.openpty()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        env = dict(os.environ, TERM="xterm-256color", LANG=os.environ.get("LANG") or "es_ES.UTF-8")
+        # -T sync: tmux envuelve cada redibujado en «salida sincronizada» (DEC 2026) y el
+        # emulador del móvil lo pinta de una vez; sin esto, cada trozo llegaba a medias y
+        # la pantalla entera parpadeaba al teclear.
+        argv = [_tmux_bin()] + (["-L", sock_name] if sock_name else []) + ["-T", "sync", "-u", "attach-session", "-t", f"={session}"]
+        proc = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, env=env,
+                                # El pty pasa a ser el terminal de control del cliente tmux: sin
+                                # TIOCSCTTY no recibe SIGWINCH y no se entera de los cambios de tamaño.
+                                preexec_fn=lambda: (os.setsid(), fcntl.ioctl(slave, termios.TIOCSCTTY, 0)),
+                                close_fds=True)
+        os.close(slave)
+        ws_url = NTFY_BASE.replace("https://", "wss://", 1).replace("http://", "ws://", 1) + f"/term/{chan}?role=agent"
+        sock, rest = _ws_connect(ws_url, dict(AUTH_HEADERS))
+    except Exception as e:
+        with _TERM_LOCK:
+            _TERM_OPEN.pop(chan, None)
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return {"error": f"no se pudo abrir el terminal en vivo: {e}"[:200]}
+    with _TERM_LOCK:
+        _TERM_OPEN[chan].update(pid=proc.pid, master=master, sock=sock)
+        t = _TERM_OPEN[chan]
+    threading.Thread(target=_term_pump, args=(chan, t, _WSReader(sock, rest)), daemon=True,
+                     name=f"term-in-{chan[:6]}").start()
+    log(f"TERM_OPEN chan={chan[:12]} target={target} {cols}x{rows}")
+    return {"ok": "1", "chan": chan, "cols": str(cols), "rows": str(rows), "session": session}
+
+def cmd_term_close(args: dict) -> dict:
+    chan = str(args.get("chan") or "").strip()
+    if chan not in _TERM_OPEN:
+        return {"ok": "1", "info": "no estaba abierto"}
+    _term_cleanup(chan)
+    return {"ok": "1"}
+
+# ── Vigilancia de un pane: la pantalla se EMPUJA al móvil cuando cambia ──────────
+TMUX_WATCH_INTERVAL = float(os.environ.get("TMUX_WATCH_INTERVAL", "0.06"))   # con actividad
+TMUX_WATCH_IDLE_S   = float(os.environ.get("TMUX_WATCH_IDLE_S", "0.25"))     # en reposo, tope
+TMUX_WATCH_TTL_MAX  = 180
+_TMUX_WATCH_ID_RE   = re.compile(r"^[A-Za-z0-9_\-]{4,64}$")
+_TMUX_WATCHES: dict = {}          # (socket, target) → {"ids": {watch_id: deadline}, "thread": Thread}
+_TMUX_WATCH_LOCK = threading.Lock()
+_TMUX_WATCH_WAKE: dict = {}       # (socket, target) → época de la última tecla/rueda
+
+def _tmux_watch_wake(sock: str, target: str):
+    _TMUX_WATCH_WAKE[(sock, target)] = time.time()
+
+def _tmux_watch_loop(key: tuple):
+    sock, target = key
+    last = None
+    last_change = time.time()
+    while True:
+        with _TMUX_WATCH_LOCK:
+            w = _TMUX_WATCHES.get(key)
+            now = time.time()
+            ids = {i: d for i, d in (w["ids"].items() if w else []) if d > now}
+            if w:
+                w["ids"] = ids
+            if not ids:
+                _TMUX_WATCHES.pop(key, None)
+                _TMUX_WATCH_WAKE.pop(key, None)
+                log(f"TMUX_WATCH end target={target}")
+                return
+        data = _tmux_capture(target, sock)
+        if "error" in data:
+            for wid in ids:
+                publish(wid, "ok", dict(data, watch=wid))
+            with _TMUX_WATCH_LOCK:
+                _TMUX_WATCHES.pop(key, None)
+            return
+        sig = (data["screen"], data["cursor_x"], data["cursor_y"], data["dead"], data["title"])
+        if sig != last:
+            last = sig
+            last_change = time.time()
+            for wid in ids:
+                publish(wid, "ok", dict(data, watch=wid))
+        since = min(time.time() - last_change, time.time() - _TMUX_WATCH_WAKE.get(key, 0))
+        time.sleep(TMUX_WATCH_INTERVAL if since < 3 else TMUX_WATCH_IDLE_S)
+
+def cmd_tmux_watch(args: dict) -> dict:
+    """Empieza (o renueva) la vigilancia de un pane: `watch_id` (4-64 caracteres), `ttl`
+    (segundos, máx. 180). Devuelve la pantalla actual; las siguientes llegan solas."""
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    wid = str(args.get("watch_id") or "").strip()
+    if not _TMUX_WATCH_ID_RE.match(wid):
+        return {"error": "watch_id no válido"}
+    try:
+        ttl = max(5, min(int(args.get("ttl") or 90), TMUX_WATCH_TTL_MAX))
+    except (TypeError, ValueError):
+        ttl = 90
+    data = _tmux_capture(target, sock)
+    if "error" in data:
+        return data
+    key = (sock, target)
+    with _TMUX_WATCH_LOCK:
+        w = _TMUX_WATCHES.get(key)
+        if w is None or not w["thread"].is_alive():
+            w = {"ids": {}, "thread": None}
+            _TMUX_WATCHES[key] = w
+            t = threading.Thread(target=_tmux_watch_loop, args=(key,), daemon=True, name=f"watch-{target}")
+            w["thread"] = t
+            w["ids"][wid] = time.time() + ttl
+            t.start()
+            log(f"TMUX_WATCH start target={target} id={wid} ttl={ttl}s")
+        else:
+            w["ids"][wid] = time.time() + ttl
+    return dict(data, watch=wid, ttl=str(ttl))
+
+def cmd_tmux_unwatch(args: dict) -> dict:
+    wid = str(args.get("watch_id") or "").strip()
+    removed = 0
+    with _TMUX_WATCH_LOCK:
+        for w in _TMUX_WATCHES.values():
+            if wid in w["ids"]:
+                del w["ids"][wid]
+                removed += 1
+    return {"ok": "1", "removed": str(removed)}
+
+def cmd_tmux_keys(args: dict) -> dict:
+    """Teclea en un pane: `text` se envía literal; `keys` son nombres de tecla de tmux
+    separados por espacio (Enter, Escape, Tab, BSpace, Up, Down, Left, Right, C-c, C-d,
+    C-l, Home, End, PPage, NPage, F1…). Primero el texto, luego las teclas."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "teclear en terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    text = str(args.get("text") or "")
+    keys = [k for k in str(args.get("keys") or "").split() if k]
+    if len(text) > CLAUDE_TEXT_MAX:
+        return {"error": "texto demasiado largo"}
+    bad = [k for k in keys if not _TMUX_KEY_RE.match(k)]
+    if bad:
+        return {"error": f"tecla no válida: {bad[0][:20]}"}
+    if not text and not keys:
+        return {"error": "nada que enviar"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    try:
+        if text:
+            _tmux("send-keys", "-t", target, "-l", "--", text, socket=sock)
+        if keys:
+            _tmux("send-keys", "-t", target, *keys, socket=sock)
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo enviar").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    _tmux_watch_wake(sock, target)
+    log(f"TMUX_KEYS target={target} chars={len(text)} keys={' '.join(keys)[:60]}")
+    return {"ok": "1", "target": target}
+
+def cmd_tmux_scroll(args: dict) -> dict:
+    """Desplaza lo que corre DENTRO del pane (apps a pantalla completa como Claude Code):
+    `n` pasos de rueda de ratón (`dir` up/down) si la app sigue el ratón; si no, Página."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "desplazar terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    target = str(args.get("target") or "").strip()
+    if not _tmux_target_ok(target):
+        return {"error": "falta 'target'"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    direction = "up" if str(args.get("dir") or "up") != "down" else "down"
+    try:
+        n = max(1, min(int(args.get("n") or 1), 60))
+    except (TypeError, ValueError):
+        n = 1
+    try:
+        info = _tmux("display-message", "-p", "-t", target,
+                     "#{mouse_any_flag}\x1f#{pane_width}\x1f#{pane_height}\x1f#{alternate_on}\x1f#{pane_in_mode}",
+                     socket=sock).strip().split("\x1f")
+        info += [""] * (5 - len(info))
+        mouse = info[0] == "1"
+        cols = max(1, int(info[1] or 1)); rows = max(1, int(info[2] or 1))
+        if str(args.get("copy") or "") == "1" and info[3] != "1":
+            # copy=1: historial de tmux por su modo copia (ver agent.py).
+            in_mode = info[4] == "1"
+            if direction == "up" or in_mode:
+                if not in_mode:
+                    _tmux("copy-mode", "-e", "-t", target, socket=sock)
+                _tmux("send-keys", "-t", target, "-X", "-N", str(n),
+                      "scroll-up" if direction == "up" else "scroll-down", socket=sock)
+            via = "copy"
+        elif mouse:
+            code = 64 if direction == "up" else 65
+            seq = f"\x1b[<{code};{cols // 2 + 1};{rows // 2 + 1}M" * n
+            _tmux("send-keys", "-t", target, "-l", "--", seq, socket=sock)
+            via = "mouse"
+        else:
+            key = "PPage" if direction == "up" else "NPage"
+            _tmux("send-keys", "-t", target, *([key] * max(1, n // 3)), socket=sock)
+            via = "keys"
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo desplazar").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    _tmux_watch_wake(sock, target)
+    return {"ok": "1", "via": via, "n": str(n), "alternate": info[3] or "0"}
+
+def cmd_tmux_new(args: dict) -> dict:
+    """Crea una sesión tmux nueva (desacoplada) y opcionalmente arranca en ella un programa:
+    `claude_attach`=<job> abre una sesión en segundo plano de Claude en un terminal,
+    `claude_resume`=<sessionId> reanuda una conversación de forma interactiva,
+    `claude`=1 arranca Claude Code sin más. Sin nada de eso: un shell."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "crear terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    name = str(args.get("name") or "").strip() or f"sw-{int(time.time()) % 100000}"
+    if not _TMUX_SESSION_RE.match(name):
+        return {"error": "nombre de sesión no válido (letras, números, - y _)"}
+    cwd = os.path.expanduser(str(args.get("cwd") or "").strip()) or os.path.expanduser("~")
+    if not os.path.isdir(cwd):
+        return {"error": f"la carpeta no existe: {cwd[:120]}"}
+    try:
+        cols = max(20, min(int(args.get("cols") or 80), 300))
+        rows = max(5, min(int(args.get("rows") or 24), 100))
+    except (TypeError, ValueError):
+        cols, rows = 80, 24
+    program = []
+    if args.get("claude_attach"):
+        job = str(args["claude_attach"]).strip()
+        if not re.fullmatch(r"[0-9a-f]{8}", job):
+            return {"error": "claude_attach debe ser el id corto del trabajo"}
+        program = [_claude_bin(), "attach", job]
+    elif args.get("claude_resume"):
+        sid = str(args["claude_resume"]).strip()
+        if not re.fullmatch(r"[0-9a-fA-F-]{8,64}", sid):
+            return {"error": "claude_resume debe ser un sessionId"}
+        program = [_claude_bin(), "--resume", sid]
+    elif str(args.get("claude") or "") == "1":
+        program = [_claude_bin()]
+    if program and not program[0]:
+        return {"error": "no encuentro el CLI `claude` en esta máquina"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    try:
+        _tmux("new-session", "-d", "-s", name, "-c", cwd, "-x", str(cols), "-y", str(rows), *program, socket=sock)
+        target = _tmux("display-message", "-p", "-t", name,
+                       "#{session_name}:#{window_index}.#{pane_index}", socket=sock).strip()
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo crear").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    log(f"TMUX_NEW session={name} cwd={cwd} program={' '.join(program)[:80]}")
+    return {"ok": "1", "target": target, "session": name, "cwd": cwd, "socket": sock}
+
+def cmd_tmux_kill(args: dict) -> dict:
+    """Cierra una sesión tmux entera (lo que corría dentro muere)."""
+    blocked = _claude_control_blocked() if ALLOW_CLAUDE_CONTROL else \
+        {"bloqueado": "cerrar terminales está desactivado en este nodo (ALLOW_CLAUDE_CONTROL=1 para permitirlo)"}
+    if blocked:
+        return blocked
+    missing = _tmux_missing()
+    if missing:
+        return missing
+    session = str(args.get("session") or "").strip()
+    if not _TMUX_SESSION_RE.match(session):
+        return {"error": "falta 'session'"}
+    sock = _tmux_socket_arg(args)
+    if sock is None:
+        return {"error": "socket no válido"}
+    try:
+        _tmux("kill-session", "-t", f"={session}", socket=sock)
+    except subprocess.CalledProcessError as e:
+        return {"error": (e.stderr or "no se pudo cerrar").strip()[:200]}
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"error": f"tmux: {e}"[:200]}
+    log(f"TMUX_KILL session={session}")
+    return {"ok": "1", "session": session}
+
+# ── Eventos de Claude Code → push «te necesita» / «terminó» ───────────────────
+# Un hook de Claude Code (~/.servward/claude-hook.sh, instalado por
+# claude_hooks_install) añade cada evento como una línea JSON a
+# ~/.servward/claude-events.jsonl. Este hilo lee las líneas nuevas y avisa al móvil:
+#   Notification permission_prompt / idle_prompt / agent_needs_input → «Te necesita»
+#   Stop en una sesión en segundo plano                               → «Terminó»
+# El interruptor ~/.servward/push-off (claude_push enabled=0) silencia este nodo.
+SERVWARD_DIR       = os.environ.get("SERVWARD_DIR", os.path.expanduser("~/.servward"))
+CLAUDE_EVENTS_FILE = os.path.join(SERVWARD_DIR, "claude-events.jsonl")
+CLAUDE_HOOK_SCRIPT = os.path.join(SERVWARD_DIR, "claude-hook.sh")
+CLAUDE_PUSH_OFF    = os.path.join(SERVWARD_DIR, "push-off")
+CLAUDE_EVENTS_MAX_BYTES = 2 * 1024 * 1024
+CLAUDE_PUSH_STOP_ALL = os.environ.get("CLAUDE_PUSH_STOP_ALL", "0").strip() == "1"
+# idle_prompt («esperando tu entrada» a los 60 s de reposo) NO cuenta: saltaría tras cada
+# respuesta y pondría el semáforo en amarillo sin que Claude necesite nada.
+_NEEDS_YOU_TYPES = {"permission_prompt", "agent_needs_input",
+                    "elicitation_dialog", "elicitation_url_dialog"}
+_CLAUDE_HOOK_SH = """#!/bin/bash
+# Servward: guarda el evento de Claude Code (JSON por stdin) para que el agente avise al móvil.
+# No decide nada: siempre sale 0 y nunca escribe en stdout. Apunta la cadena de PIDs que
+# lo lanzó: así el agente sabe qué proceso de Claude emite cada sesión aunque el id de la
+# sesión cambie (tras compactar el contexto, Claude sigue con un id nuevo).
+f="$HOME/.servward/claude-events.jsonl"
+mkdir -p "$HOME/.servward" 2>/dev/null
+ev=$(cat | tr -d '\\n\\r')
+p1=$PPID
+p2=$(ps -o ppid= -p "$p1" 2>/dev/null | tr -d ' ')
+p3=$(ps -o ppid= -p "${p2:-0}" 2>/dev/null | tr -d ' ')
+[ -n "$ev" ] && printf '{"ts":%s,"pids":[%s,%s,%s],"ev":%s}\\n' "$(date +%s)" "${p1:-0}" "${p2:-0}" "${p3:-0}" "$ev" >> "$f" 2>/dev/null
+exit 0
+"""
+
+# ── Identidad real de cada sesión ───────────────────────────────────────────────
+# Tras compactar el contexto, Claude Code sigue escribiendo en un transcript con un id
+# NUEVO y los hooks lo emiten, pero ~/.claude/sessions/<pid>.json se queda con el viejo.
+# El agente aprende de cada evento del hook «el proceso <pid> emite ahora la sesión <id>»
+# y lo persiste; con eso la lista, el transcript y la Live Activity usan siempre el id vivo.
+CLAUDE_PIDMAP_FILE = os.path.join(SERVWARD_DIR, "pid-sessions.json")
+_PID_SESSION: dict = {}          # pid (str) → {"id": sessionId, "ts": epoch}
+_PID_SESSION_LOCK = threading.Lock()
+
+def _pidmap_load():
+    d = _read_json_file(CLAUDE_PIDMAP_FILE)
+    if isinstance(d, dict):
+        with _PID_SESSION_LOCK:
+            _PID_SESSION.update({str(k): v for k, v in d.items() if isinstance(v, dict) and v.get("id")})
+
+def _pidmap_learn(pids: list, sid: str, cwd: str):
+    """Asocia el id de sesión del evento a los PIDs vivos de la cadena que lanzó el hook.
+    Si ninguno es un proceso de Claude conocido, se asocia por carpeta cuando solo hay
+    una sesión interactiva viva con ese cwd."""
+    if not sid:
+        return
+    known = {}
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if isinstance(d, dict) and d.get("pid") and _pid_alive(d.get("pid")):
+            known[str(d["pid"])] = d
+    targets = [str(p) for p in pids if str(p) in known]
+    if not targets:
+        same_cwd = [p for p, d in known.items() if str(d.get("cwd") or "") == cwd and d.get("kind") != "bg"]
+        if len(same_cwd) == 1:
+            targets = same_cwd
+    if not targets:
+        return
+    changed = False
+    with _PID_SESSION_LOCK:
+        for p in targets:
+            if _PID_SESSION.get(p, {}).get("id") != sid:
+                changed = True
+            _PID_SESSION[p] = {"id": sid, "ts": int(time.time())}
+        for p in [p for p in _PID_SESSION if not _pid_alive(p)]:
+            _PID_SESSION.pop(p, None)
+        snapshot = dict(_PID_SESSION)
+    if changed:
+        log(f"CLAUDE_SESSION_ID pid={','.join(targets)} → {sid[:8]}")
+    try:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        tmp = CLAUDE_PIDMAP_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f)
+        os.replace(tmp, CLAUDE_PIDMAP_FILE)
+    except OSError:
+        pass
+
+def _live_session_id(pid, fallback: str) -> str:
+    """Id vivo de la sesión del proceso `pid` (el aprendido del hook) o el de la ficha."""
+    with _PID_SESSION_LOCK:
+        entry = _PID_SESSION.get(str(pid))
+    return entry["id"] if entry and entry.get("id") else fallback
+
+def _session_aliases(ident: str) -> set:
+    """Todos los ids con los que se conoce la misma sesión: el de la ficha, el aprendido
+    del hook, el id corto del trabajo y el de reanudación."""
+    ids = {ident}
+    live = _live_session_files()
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "sessions", "*.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        fam = {str(d.get("sessionId") or ""), str(d.get("jobId") or ""),
+               _live_session_id(d.get("pid"), ""), str(d.get("pid") or ""),
+               str(d.get("parkedJobId") or "")} - {""}
+        t = _parked_target(d, live)
+        if t:
+            fam |= {str(t.get("sessionId") or ""), _live_session_id(t.get("pid"), ""), str(t.get("pid") or "")} - {""}
+        if ident in fam:
+            ids |= fam
+    for path in glob.glob(os.path.join(CLAUDE_DIR, "jobs", "*", "state.json")):
+        d = _read_json_file(path)
+        if not isinstance(d, dict):
+            continue
+        fam = {os.path.basename(os.path.dirname(path)), str(d.get("sessionId") or ""),
+               str(d.get("resumeSessionId") or "")} - {""}
+        if ids & fam:
+            ids |= fam
+    return ids
+
+def _claude_push_enabled() -> bool:
+    return not os.path.exists(CLAUDE_PUSH_OFF)
+
+def cmd_claude_push(args: dict) -> dict:
+    """Enciende o apaga los avisos de agentes de ESTE nodo (enabled=1/0). Sin args: estado."""
+    if "enabled" in args:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        if str(args["enabled"]) == "1":
+            try:
+                os.remove(CLAUDE_PUSH_OFF)
+            except FileNotFoundError:
+                pass
+        else:
+            open(CLAUDE_PUSH_OFF, "w").close()
+    return {"enabled": "1" if _claude_push_enabled() else "0",
+            "hooks": "1" if _claude_hooks_installed() else "0"}
+
+def _claude_settings_path() -> str:
+    return os.path.join(CLAUDE_DIR, "settings.json")
+
+def _claude_hooks_installed() -> bool:
+    d = _read_json_file(_claude_settings_path()) or {}
+    hooks = d.get("hooks") if isinstance(d, dict) else None
+    if not isinstance(hooks, dict):
+        return False
+    return any(CLAUDE_HOOK_SCRIPT in json.dumps(v) for v in hooks.values()) and os.access(CLAUDE_HOOK_SCRIPT, os.X_OK)
+
+def cmd_claude_hooks_install(args: dict) -> dict:
+    """Instala el hook en ~/.claude/settings.json (fusiona: no toca los hooks que ya haya)
+    y escribe ~/.servward/claude-hook.sh. remove=1 lo desinstala."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    path = _claude_settings_path()
+    settings = _read_json_file(path)
+    if settings is None and os.path.exists(path):
+        return {"error": "settings.json no es JSON válido; no lo toco"}
+    settings = settings if isinstance(settings, dict) else {}
+    hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
+    ours = {"type": "command", "command": CLAUDE_HOOK_SCRIPT, "async": True, "timeout": 10}
+    events = ["Notification", "Stop", "UserPromptSubmit", "SessionEnd"]
+    if str(args.get("remove") or "") == "1":
+        for ev in events:
+            groups = [g for g in hooks.get(ev, [])
+                      if not any(h.get("command") == CLAUDE_HOOK_SCRIPT for h in g.get("hooks", []))]
+            if groups:
+                hooks[ev] = groups
+            else:
+                hooks.pop(ev, None)
+    else:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        with open(CLAUDE_HOOK_SCRIPT, "w", encoding="utf-8") as f:
+            f.write(_CLAUDE_HOOK_SH)
+        os.chmod(CLAUDE_HOOK_SCRIPT, 0o755)
+        for ev in events:
+            groups = hooks.get(ev) if isinstance(hooks.get(ev), list) else []
+            if not any(h.get("command") == CLAUDE_HOOK_SCRIPT for g in groups for h in g.get("hooks", [])):
+                groups.append({"hooks": [dict(ours)]})
+            hooks[ev] = groups
+    if hooks:
+        settings["hooks"] = hooks
+    else:
+        settings.pop("hooks", None)
+    tmp = path + ".servward.tmp"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    mode = os.stat(path).st_mode & 0o777 if os.path.exists(path) else 0o600
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+    log(f"CLAUDE_HOOKS {'removed' if args.get('remove') else 'installed'}")
+    return {"ok": "1", "hooks": "1" if _claude_hooks_installed() else "0", "settings": path}
+
+# ── Uso de la cuenta de Claude (5 h, semanal, por modelo) ─────────────────────
+# Lo mismo que enseña /usage en Claude Code: se consulta el endpoint de uso con el token
+# OAuth de la sesión de Claude Code de esta máquina (fichero ~/.claude/.credentials.json;
+# en macOS, el llavero). Del token no se registra ni se devuelve nada.
+CLAUDE_USAGE_URL     = os.environ.get("CLAUDE_USAGE_URL", "https://api.anthropic.com/api/oauth/usage")
+CLAUDE_USAGE_CACHE_S = 60
+_CLAUDE_USAGE_CACHE: dict = {"ts": 0.0, "data": None}
+_CLAUDE_USAGE_LOCK = threading.Lock()
+_USAGE_LABELS = {"five_hour": "Sesión (5 h)", "seven_day": "Semanal",
+                 "seven_day_opus": "Opus", "seven_day_fable": "Fable", "seven_day_sonnet": "Sonnet"}
+
+def _claude_oauth_token() -> tuple:
+    """(token, error). Primero el fichero ~/.claude/.credentials.json; si no, el llavero (macOS)."""
+    raw = ""
+    path = os.path.join(CLAUDE_DIR, ".credentials.json")
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                raw = f.read()
+        except OSError:
+            raw = ""
+    if not raw and sys.platform == "darwin":
+        try:
+            r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                               capture_output=True, text=True, timeout=25)
+            raw = r.stdout.strip() if r.returncode == 0 else ""
+            if r.returncode != 0:
+                return "", "el llavero no dio las credenciales de Claude Code (si el Mac pide permiso, elige «Permitir siempre»)"
+        except subprocess.TimeoutExpired:
+            return "", "el llavero está esperando tu permiso en el Mac: acepta «Permitir siempre» y vuelve a intentarlo"
+        except OSError as e:
+            return "", f"llavero: {e}"
+    if not raw:
+        return "", "no hay credenciales de Claude Code en esta máquina"
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        return "", "credenciales ilegibles"
+    o = d.get("claudeAiOauth") if isinstance(d, dict) else None
+    tok = str((o or {}).get("accessToken") or "")
+    if not tok:
+        return "", "Claude Code no ha iniciado sesión con una cuenta de Claude en esta máquina"
+    exp = _to_ms((o or {}).get("expiresAt"))
+    if exp and exp < time.time() * 1000:
+        return "", "el token de Claude Code ha caducado: abre Claude en esta máquina para renovarlo"
+    return tok, ""
+
+def cmd_claude_commands(args: dict) -> dict:
+    """Comandos con barra disponibles para Claude Code en esta máquina: skills
+    (~/.claude/skills/*/SKILL.md) y comandos propios (~/.claude/commands/**/*.md), más los
+    del proyecto de la carpeta indicada (.claude/skills y .claude/commands). Solo nombre y
+    descripción, como JSON en 'commands' (contrato string-only). Solo lectura."""
+    out: list = []
+    seen: set = set()
+
+    def add(name: str, desc: str, kind: str, scope: str) -> None:
+        key = (kind, name)
+        if not name or key in seen:
+            return
+        seen.add(key)
+        out.append({"name": name, "description": " ".join(desc.split())[:160], "kind": kind, "scope": scope})
+
+    def frontmatter(path: str):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                head = f.read(4000)
+        except OSError:
+            return {}, ""
+        meta: dict = {}
+        body = head
+        if head.startswith("---"):
+            end = head.find("\n---", 3)
+            if end > 0:
+                for line in head[3:end].splitlines():
+                    if ":" in line and not line.startswith((" ", "\t")):
+                        k, v = line.split(":", 1)
+                        meta[k.strip()] = v.strip().strip('"').strip("'")
+                body = head[end + 4:]
+        return meta, body
+
+    def scan(base: str, scope: str) -> None:
+        sk = os.path.join(base, "skills")
+        if os.path.isdir(sk):
+            for d in sorted(os.listdir(sk)):
+                p = os.path.join(sk, d, "SKILL.md")
+                if not os.path.isfile(p):
+                    continue
+                meta, _body = frontmatter(p)
+                if str(meta.get("user-invocable", "")).lower() == "false":
+                    continue
+                add(meta.get("name") or d, meta.get("description") or "", "skill", scope)
+        cm = os.path.join(base, "commands")
+        if os.path.isdir(cm):
+            for root, _dirs, files in os.walk(cm):
+                for fn in sorted(files):
+                    if not fn.endswith(".md"):
+                        continue
+                    meta, body = frontmatter(os.path.join(root, fn))
+                    desc = meta.get("description") or next(
+                        (ln.strip("# ").strip() for ln in body.splitlines() if ln.strip()), "")
+                    folder = os.path.relpath(root, cm)
+                    if folder != ".":
+                        desc = f"({folder}) {desc}"
+                    add(fn[:-3], desc, "command", scope)
+
+    scan(CLAUDE_DIR, "user")
+    cwd = str(args.get("cwd") or "")
+    if cwd and os.path.isdir(os.path.join(cwd, ".claude")):
+        scan(os.path.join(cwd, ".claude"), "project")
+    return {"count": str(len(out)), "commands": json.dumps(out, ensure_ascii=False)}
+
+
+def cmd_claude_usage(_args: dict) -> dict:
+    """Uso de la cuenta: ventanas (5 h, semanal, por modelo) con % y reinicio. JSON en 'windows'."""
+    with _CLAUDE_USAGE_LOCK:
+        if _CLAUDE_USAGE_CACHE["data"] and time.time() - _CLAUDE_USAGE_CACHE["ts"] < CLAUDE_USAGE_CACHE_S:
+            return dict(_CLAUDE_USAGE_CACHE["data"], cached="1")
+        tok, err = _claude_oauth_token()
+        if err:
+            return {"error": err}
+        req = urllib.request.Request(CLAUDE_USAGE_URL, headers={
+            "Authorization": f"Bearer {tok}", "anthropic-beta": "oauth-2025-04-20",
+            "Accept": "application/json", "User-Agent": "servward-agent"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                body = json.loads(r.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return {"error": "Anthropic rechazó el token de Claude Code (caducado o revocado): abre Claude en esta máquina"}
+            return {"error": f"el servicio de uso devolvió {e.code}"}
+        except (urllib.error.URLError, ValueError, OSError) as e:
+            return {"error": f"sin acceso al servicio de uso: {e}"[:160]}
+        windows = []
+        for key, v in (body.items() if isinstance(body, dict) else []):
+            if not isinstance(v, dict) or "utilization" not in v:
+                continue
+            try:
+                pct = float(v.get("utilization") or 0)
+            except (TypeError, ValueError):
+                pct = 0.0
+            resets = v.get("resets_at")
+            resets_ms = _iso_to_ms(resets) if isinstance(resets, str) else _to_ms(resets)
+            windows.append({"key": key, "label": _USAGE_LABELS.get(key, key.replace("_", " ")),
+                            "pct": round(pct, 1), "resets_ms": resets_ms})
+        order = {"five_hour": 0, "seven_day": 1}
+        windows.sort(key=lambda w: (order.get(w["key"], 2), w["key"]))
+        out = {"count": str(len(windows)), "host": platform.node(), "fetched_ms": str(int(time.time() * 1000)),
+               "windows": json.dumps(windows, ensure_ascii=False)}
+        _CLAUDE_USAGE_CACHE.update(ts=time.time(), data=out)
+        return dict(out, cached="0")
+
+# ── Live Activity (Dynamic Island) de la sesión que el móvil estaba usando ──────
+# La app registra aquí el token de la Live Activity (claude_live_register); cada evento
+# del hook la actualiza por APNs (push-type liveactivity): working / needs_you / done.
+CLAUDE_LIVE_FILE = os.path.join(SERVWARD_DIR, "live-activities.json")
+_CLAUDE_LIVE_LOCK = threading.Lock()
+_LIVE_TOKEN_RE = re.compile(r"^[0-9a-fA-F]{32,200}$")
+
+def _live_load() -> dict:
+    d = _read_json_file(CLAUDE_LIVE_FILE)
+    return d if isinstance(d, dict) else {}
+
+def _live_save(d: dict):
+    os.makedirs(SERVWARD_DIR, exist_ok=True)
+    tmp = CLAUDE_LIVE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f)
+    os.replace(tmp, CLAUDE_LIVE_FILE)
+
+def _live_resolve_pane_id(sid: str) -> str:
+    """La app puede registrar un terminal sin sesión conocida como «socket|sesión:ventana.pane»;
+    si dentro de ese pane corre Claude, se usa el id de esa sesión."""
+    if "|" not in sid:
+        return sid
+    socket, _, target = sid.partition("|")
+    if not _tmux_target_ok(target) or (socket and not _TMUX_SOCKET_RE.match(socket)) or not _tmux_bin():
+        return sid
+    try:
+        pane_id = _tmux("display-message", "-p", "-t", target, "#{pane_id}", socket=socket).strip()
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+        return sid
+    claude = _claude_by_tmux_pane().get(pane_id, {})
+    return claude.get("id") or sid
+
+def cmd_claude_live_register(args: dict) -> dict:
+    """Registra el token de la Live Activity de una sesión (session_id, token, name)."""
+    sid = str(args.get("session_id") or "").strip()
+    token = str(args.get("token") or "").strip()
+    if not sid or not _LIVE_TOKEN_RE.match(token):
+        return {"error": "faltan session_id o token"}
+    sid = _live_resolve_pane_id(sid)
+    aliases = _session_aliases(sid)
+    now = int(time.time())
+    with _CLAUDE_LIVE_LOCK:
+        d = _live_load()
+        # Una sola actividad por sesión: fuera los registros de sus otros ids y los de más de 12 h.
+        for k in [k for k in d if (k != sid and k in aliases) or now - int(d[k].get("ts", 0)) > 12 * 3600]:
+            d.pop(k, None)
+        d[sid] = {"token": token, "name": str(args.get("name") or "")[:80], "ts": now}
+        for old in sorted(d, key=lambda k: d[k].get("ts", 0))[:-20]:
+            d.pop(old, None)
+        _live_save(d)
+    log(f"LIVE_REGISTER session={sid[:8]}")
+    return {"ok": "1", "count": str(len(d))}
+
+def cmd_claude_live_unregister(args: dict) -> dict:
+    sid = str(args.get("session_id") or "").strip()
+    with _CLAUDE_LIVE_LOCK:
+        d = _live_load()
+        removed = d.pop(sid, None) is not None
+        _live_save(d)
+    return {"ok": "1", "removed": "1" if removed else "0"}
+
+def send_live_activity(token, state, detail, name, end=False, alert=None) -> bool:
+    """Actualiza (o cierra) una Live Activity por APNs. Devuelve True si APNs aceptó."""
+    if not (os.path.isfile(APNS_CERT) and os.path.isfile(APNS_KEY)):
+        return False
+    aps = {"timestamp": int(time.time()), "event": "end" if end else "update",
+           "content-state": {"state": state, "detail": detail[:160], "updatedAt": time.time()}}
+    if end:
+        aps["dismissal-date"] = int(time.time()) + 600
+    if alert:
+        aps["alert"] = {"title": alert[0], "body": alert[1]}
+    cmd = ["curl", "--http2", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+           "--cert", APNS_CERT, "--key", APNS_KEY,
+           "-H", f"apns-topic: {APNS_BUNDLE}.push-type.liveactivity",
+           "-H", "apns-push-type: liveactivity", "-H", "apns-priority: 10",
+           "-d", json.dumps({"aps": aps}), f"https://{APNS_HOST}/3/device/{token}"]
+    try:
+        code = subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout.strip()
+    except Exception as e:
+        log(f"LIVE_ERROR {e}")
+        return False
+    if code == "200":
+        log(f"LIVE_SENT state={state} name={name!r}{' (end)' if end else ''}")
+        return True
+    log(f"LIVE_FAIL http={code} state={state}")
+    return code not in ("400", "410")
+
+def _live_update(sid: str, state: str, detail: str, end: bool = False, alert=None):
+    """Actualiza la(s) Live Activity registrada(s) para esta sesión, con cualquiera de sus ids."""
+    with _CLAUDE_LIVE_LOCK:
+        d = _live_load()
+    if not d:
+        return
+    aliases = _session_aliases(sid)
+    keys = [k for k in d if k == sid or k in aliases]
+    if not keys:
+        return
+    drop = []
+    for key in keys:
+        entry = d[key]
+        ok = send_live_activity(entry["token"], state, detail, entry.get("name", ""), end=end, alert=alert)
+        if end or not ok:
+            drop.append(key)
+    if drop:
+        with _CLAUDE_LIVE_LOCK:
+            d = _live_load()
+            for key in drop:
+                d.pop(key, None)
+            _live_save(d)
+
+def _claude_session_label(session_id: str, cwd: str) -> str:
+    info = _claude_find(session_id) if session_id else None
+    if info and info.get("name"):
+        return info["name"]
+    return os.path.basename(cwd.rstrip("/")) or session_id[:8]
+
+def _claude_last_answer(transcript_path: str) -> str:
+    try:
+        lines, _ = _tail_lines(transcript_path, 256 * 1024)
+    except OSError:
+        return ""
+    for m in reversed(_claude_messages(lines, 300)):
+        if m["role"] == "assistant" and m["kind"] == "text":
+            return m["text"].replace("\n", " ")[:160]
+    return ""
+
+# ── Estado de atención por sesión (lo que dicen los hooks) ───────────────────────
+CLAUDE_ATTENTION_FILE = os.path.join(SERVWARD_DIR, "session-state.json")
+_ATTENTION: dict = {}           # sid → {"state": working|needs_you|done, "detail": str, "ts": epoch}
+_ATTENTION_LOCK = threading.Lock()
+
+def _attention_load():
+    d = _read_json_file(CLAUDE_ATTENTION_FILE)
+    if isinstance(d, dict):
+        with _ATTENTION_LOCK:
+            _ATTENTION.update({k: v for k, v in d.items() if isinstance(v, dict)})
+
+def _attention_set(sid: str, state: str, detail: str = "", remove: bool = False):
+    if not sid:
+        return
+    now = int(time.time())
+    with _ATTENTION_LOCK:
+        if remove:
+            _ATTENTION.pop(sid, None)
+        else:
+            # `ev`: marca de este momento de la sesión (ver cmd_claude_answer).
+            _ATTENTION[sid] = {"state": state, "detail": detail[:200], "ts": now,
+                               "ev": secrets.token_hex(4)}
+        for k in [k for k, v in _ATTENTION.items() if now - int(v.get("ts", 0)) > 3 * 24 * 3600]:
+            _ATTENTION.pop(k, None)
+        snapshot = dict(_ATTENTION)
+    try:
+        os.makedirs(SERVWARD_DIR, exist_ok=True)
+        tmp = CLAUDE_ATTENTION_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False)
+        os.replace(tmp, CLAUDE_ATTENTION_FILE)
+    except OSError:
+        pass
+
+def _attention_for(ident: str):
+    with _ATTENTION_LOCK:
+        if ident in _ATTENTION:
+            return dict(_ATTENTION[ident])
+        snap = dict(_ATTENTION)
+    if not snap:
+        return None
+    for k in _session_aliases(ident):
+        if k in snap:
+            return dict(snap[k])
+    return None
+
+def _claude_pane_for(ident: str):
+    """(socket, target) del pane de tmux donde corre esta sesión, o None."""
+    aliases = _session_aliases(ident)
+    live = _live_session_files()
+    for d in live:
+        if not d.get("tmux"):
+            continue
+        fam = {str(d.get("sessionId") or ""), _effective_id(d, live), str(d.get("parkedJobId") or "")} - {""}
+        if fam & aliases:
+            sess, _, rest = str(d["tmux"]).partition(":")
+            pane_id = rest.rsplit(".", 1)[-1]
+            for sock in _tmux_sockets():
+                try:
+                    target = _tmux("display-message", "-p", "-t", pane_id,
+                                   "#{session_name}:#{window_index}.#{pane_index}", socket=sock).strip()
+                except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
+                    continue
+                if target.startswith(sess + ":"):
+                    return ("" if sock == "default" else sock, target)
+    return None
+
+def cmd_claude_answer(args: dict) -> dict:
+    """Responde a una sesión desde el aviso: terminal (texto + Intro, o solo Intro con
+    yes=1) o claude_reply si es en segundo plano."""
+    blocked = _claude_control_blocked()
+    if blocked:
+        return blocked
+    ident = str(args.get("id") or "").strip()
+    text = str(args.get("text") or "").strip()
+    yes = str(args.get("yes") or "") == "1"
+    if not ident:
+        return {"error": "falta 'id'"}
+    # Con `ev` (desde un aviso): si la sesión cambió desde entonces no se teclea nada; un «Sí»
+    # viejo aprobaría lo que haya pendiente ahora. Sin `ev`, como antes de la build 68.
+    ev = str(args.get("ev") or "").strip()
+    if ev:
+        att = _attention_for(ident) or {}
+        if att.get("ev") != ev or (yes and att.get("state") != "needs_you"):
+            log(f"CLAUDE_ANSWER_STALE id={ident[:8]} state={att.get('state')}")
+            return {"error": "Esa pregunta ya no está pendiente: abre la sesión en la app.",
+                    "stale": "1"}
+    pane = _claude_pane_for(ident)
+    if pane:
+        sock, target = pane
+        try:
+            if text:
+                _tmux("send-keys", "-t", target, "-l", "--", text, socket=sock)
+            _tmux("send-keys", "-t", target, "Enter", socket=sock)
+        except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired) as e:
+            return {"error": f"tmux: {e}"[:160]}
+        log(f"CLAUDE_ANSWER terminal target={target} chars={len(text)} yes={yes}")
+        return {"ok": "1", "via": "terminal", "target": target}
+    if not text:
+        text = "sí" if yes else ""
+    if not text:
+        return {"error": "esta sesión no está en un terminal: hace falta un texto"}
+    res = cmd_claude_reply({"id": ident, "text": text})
+    if "ok" in res:
+        res["via"] = "reply"
+    return res
+
+# ── Vigilancia de una sesión por eventos (la conversación se avisa al móvil) ─────
+_CLAUDE_WATCHES: dict = {}        # watch_id → {"sid": sessionId, "deadline": epoch}
+_CLAUDE_WATCH_LOCK = threading.Lock()
+
+def cmd_claude_watch(args: dict) -> dict:
+    ident = str(args.get("id") or "").strip()
+    wid = str(args.get("watch_id") or "").strip()
+    if not ident or not _TMUX_WATCH_ID_RE.match(wid):
+        return {"error": "faltan 'id' o 'watch_id'"}
+    try:
+        ttl = max(5, min(int(args.get("ttl") or 120), 300))
+    except (TypeError, ValueError):
+        ttl = 120
+    with _CLAUDE_WATCH_LOCK:
+        _CLAUDE_WATCHES[wid] = {"sid": ident, "deadline": time.time() + ttl}
+        for k in [k for k, v in _CLAUDE_WATCHES.items() if v["deadline"] < time.time()]:
+            _CLAUDE_WATCHES.pop(k, None)
+    att = _attention_for(ident) or {}
+    return {"ok": "1", "watch": wid, "ttl": str(ttl), "state": str(att.get("state") or ""),
+            "detail": str(att.get("detail") or "")}
+
+def cmd_claude_unwatch(args: dict) -> dict:
+    wid = str(args.get("watch_id") or "").strip()
+    with _CLAUDE_WATCH_LOCK:
+        removed = _CLAUDE_WATCHES.pop(wid, None) is not None
+    return {"ok": "1", "removed": "1" if removed else "0"}
+
+def _claude_watch_notify(sid: str, name: str, state: str, detail: str):
+    with _CLAUDE_WATCH_LOCK:
+        now = time.time()
+        targets = [(k, v["sid"]) for k, v in _CLAUDE_WATCHES.items() if v["deadline"] > now]
+    if not targets:
+        return
+    aliases = None
+    for wid, wsid in targets:
+        if wsid != sid:
+            if aliases is None:
+                aliases = _session_aliases(sid)
+            if wsid not in aliases:
+                continue
+        publish(wid, "ok", {"watch": wid, "event": name, "state": state, "detail": detail[:200],
+                            "ts_ms": str(int(time.time() * 1000))})
+
+def _claude_handle_event(rec: dict):
+    ev = rec.get("ev") if isinstance(rec.get("ev"), dict) else {}
+    name = str(ev.get("hook_event_name") or "")
+    sid  = str(ev.get("session_id") or "")
+    cwd  = str(ev.get("cwd") or "")
+    # 0) Aprender qué proceso emite esta sesión (el id puede haber cambiado al compactar).
+    pids = rec.get("pids") if isinstance(rec.get("pids"), list) else []
+    if name != "SessionEnd":
+        _pidmap_learn(pids, sid, cwd)
+    # 0b) Estado de atención (alimenta la lista de sesiones) y aviso a quien vigile la sesión.
+    if name == "UserPromptSubmit":
+        _attention_set(sid, "working", str(ev.get("prompt") or ""))
+        _claude_watch_notify(sid, name, "working", str(ev.get("prompt") or ""))
+    elif name == "Notification" and str(ev.get("notification_type") or "") in _NEEDS_YOU_TYPES:
+        _attention_set(sid, "needs_you", str(ev.get("message") or "Espera tu respuesta"))
+        _claude_watch_notify(sid, name, "needs_you", str(ev.get("message") or ""))
+    elif name == "Stop":
+        ans = _claude_last_answer(str(ev.get("transcript_path") or ""))
+        st = "needs_you" if ans.rstrip().endswith(("?", "？")) else "done"
+        _attention_set(sid, st, ans)
+        _claude_watch_notify(sid, name, st, ans)
+    elif name == "SessionEnd":
+        _attention_set(sid, "", remove=True)
+        _claude_watch_notify(sid, name, "done", "Sesión cerrada")
+    # 1) Live Activity de la sesión que el móvil está siguiendo (aunque el push esté silenciado).
+    if name == "UserPromptSubmit":
+        _live_update(sid, "working", str(ev.get("prompt") or "")[:160])
+    elif name == "Notification" and str(ev.get("notification_type") or "") in _NEEDS_YOU_TYPES:
+        _live_update(sid, "needs_you", str(ev.get("message") or "Espera tu respuesta"))
+    elif name == "Stop":
+        answer = _claude_last_answer(str(ev.get("transcript_path") or ""))
+        # Si Claude termina preguntándote algo, te necesita (amarillo), no ha acabado (verde).
+        asks = answer.rstrip().endswith("?") or answer.rstrip().endswith("？")
+        _live_update(sid, "needs_you" if asks else "done", answer or "Ha acabado")
+    elif name == "SessionEnd":
+        _live_update(sid, "done", "Sesión cerrada", end=True)
+    # 2) Avisos push
+    if not _claude_push_enabled():
+        return
+    if name == "Notification":
+        ntype = str(ev.get("notification_type") or "")
+        if ntype not in _NEEDS_YOU_TYPES:
+            return
+        if not _can_alert(f"claude-needs-{sid}", 60):
+            return
+        label = _claude_session_label(sid, cwd)
+        body = str(ev.get("message") or "Claude está esperando tu respuesta")[:180]
+        send_push(f"🖐 Te necesita · {label}", body)
+    elif name == "Stop":
+        info = _claude_find(sid)
+        is_bg = bool(info and info.get("kind") == "bg")
+        if not (is_bg or CLAUDE_PUSH_STOP_ALL):
+            return
+        if not _can_alert(f"claude-stop-{sid}", 30):
+            return
+        label = _claude_session_label(sid, cwd)
+        body = _claude_last_answer(str(ev.get("transcript_path") or "")) or "Ha terminado la tarea"
+        send_push(f"✅ Terminó · {label}", body)
+
+def claude_events_thread():
+    """Lee las líneas nuevas de claude-events.jsonl y las convierte en avisos."""
+    _pidmap_load()
+    _attention_load()
+    offset = os.path.getsize(CLAUDE_EVENTS_FILE) if os.path.exists(CLAUDE_EVENTS_FILE) else 0
+    log(f"Eventos de Claude: vigilando {CLAUDE_EVENTS_FILE} (push {'activo' if _claude_push_enabled() else 'APAGADO'})")
+    while True:
+        try:
+            if os.path.exists(CLAUDE_EVENTS_FILE):
+                size = os.path.getsize(CLAUDE_EVENTS_FILE)
+                if size < offset:
+                    offset = 0                      # fichero truncado o rotado
+                if size > offset:
+                    with open(CLAUDE_EVENTS_FILE, "rb") as f:
+                        f.seek(offset)
+                        chunk = f.read()
+                    nl = chunk.rfind(b"\n")
+                    if nl >= 0:
+                        offset += nl + 1
+                        for line in chunk[:nl].decode("utf-8", "replace").splitlines():
+                            try:
+                                rec = json.loads(line)
+                            except ValueError:
+                                continue
+                            try:
+                                _claude_handle_event(rec)
+                            except Exception as e:
+                                log(f"CLAUDE_EVENT_ERROR {e}")
+                if size > CLAUDE_EVENTS_MAX_BYTES and offset >= size:
+                    open(CLAUDE_EVENTS_FILE, "w").close()
+                    offset = 0
+        except Exception as e:
+            log(f"CLAUDE_EVENTS_LOOP {e}")
+        time.sleep(0.5)     # medio segundo: la isla y la conversación reaccionan casi al instante
+
 # Comandos permitidos con un token de SOLO LECTURA (monitorización).
 # Default-deny: cualquier cmd fuera de este set se rechaza si scope == "ro".
 ALLOWED_RO = {
@@ -901,7 +2688,7 @@ ALLOWED_RO = {
     "cert_expiry", "check_endpoints", "smart",
     "get_thresholds", "get_custom_alerts",
     "get_volume", "tailscale_status", "list_apps",
-    "claude_sessions",
+    "claude_sessions", "claude_commands",
 }
 
 # ── Mapa de comandos (mismos nombres que la app) ────────────────────────────
@@ -946,7 +2733,31 @@ COMMAND_MAP = {
     "check_endpoints": cmd_check_endpoints,
     "smart":           cmd_smart,
     # Sesiones de Claude Code
-    "claude_sessions": cmd_claude_sessions,
+    "claude_sessions":   cmd_claude_sessions,
+    "claude_transcript": cmd_claude_transcript,   # lectura
+    "claude_reply":      cmd_claude_reply,        # control: exige ALLOW_CLAUDE_CONTROL=1
+    "claude_stop":       cmd_claude_stop,
+    "claude_start":      cmd_claude_start,
+    "claude_push":       cmd_claude_push,
+    "claude_hooks_install": cmd_claude_hooks_install,
+    "claude_live_register":   cmd_claude_live_register,     # Live Activity (Dynamic Island)
+    "claude_live_unregister": cmd_claude_live_unregister,
+    "claude_usage":           cmd_claude_usage,             # uso de la cuenta (5 h / semanal / modelo)
+    "claude_commands":        cmd_claude_commands,          # skills y comandos con barra de esta máquina
+    "claude_answer":          cmd_claude_answer,            # responder desde el aviso (terminal o reply)
+    "claude_watch":           cmd_claude_watch,             # la conversación avisa al móvil por eventos
+    "claude_unwatch":         cmd_claude_unwatch,
+    # Terminales tmux (teclear/crear/cerrar exigen ALLOW_CLAUDE_CONTROL=1)
+    "tmux_sessions":     cmd_tmux_sessions,
+    "tmux_screen":       cmd_tmux_screen,
+    "tmux_watch":        cmd_tmux_watch,       # la pantalla se empuja al móvil cuando cambia
+    "tmux_unwatch":      cmd_tmux_unwatch,
+    "tmux_keys":         cmd_tmux_keys,
+    "tmux_scroll":       cmd_tmux_scroll,      # rueda dentro de apps a pantalla completa (Claude)
+    "term_open":         cmd_term_open,        # terminal en vivo (cliente tmux en pty + WebSocket)
+    "term_close":        cmd_term_close,
+    "tmux_new":          cmd_tmux_new,
+    "tmux_kill":         cmd_tmux_kill,
 }
 
 # ── Publicar respuesta ──────────────────────────────────────────────────────
@@ -967,8 +2778,42 @@ def publish(req_id: str, status: str, data: dict):
     except Exception as e:
         log(f"PUBLISH_ERROR {e}")
 
+# ── Órdenes repetidas ───────────────────────────────────────────────────────
+# La app reenvía una orden con el MISMO req_id si no le llegó la respuesta (pasó a segundo
+# plano, cambió de red…). Ejecutarla otra vez repite lo que hace: el 12-ago apply_updates
+# corrió dos veces. Cada req_id de una orden que cambia algo se recuerda 5 min: si vuelve
+# mientras corre se ignora (la primera publicará) y si ya acabó se republica su respuesta.
+# Las lecturas no se recuerdan: repetirlas no hace nada y sus respuestas pueden ser grandes.
+DEDUP_TTL_S = 300
+DEDUP_EXEMPT = ALLOWED_RO | {
+    "tmux_sessions", "tmux_screen", "claude_transcript", "claude_usage", "screenshot",
+}
+_seen_lock = threading.Lock()
+_seen: dict = {}      # req_id -> [llegada, (status, data) o None mientras corre]
+
+
+def _seen_claim(req_id: str):
+    """("run", None) la primera vez; ("running", None) si ya corre; ("done", (status, data))."""
+    now = time.time()
+    with _seen_lock:
+        for k in [k for k, v in _seen.items() if now - v[0] > DEDUP_TTL_S]:
+            del _seen[k]
+        if req_id in _seen:
+            prev = _seen[req_id][1]
+            return ("done", prev) if prev is not None else ("running", None)
+        _seen[req_id] = [now, None]
+        return ("run", None)
+
+
+def _seen_done(req_id: str, status: str, data: dict):
+    with _seen_lock:
+        if req_id in _seen:
+            _seen[req_id][1] = (status, data)
+
+
 # ── Procesar comando ────────────────────────────────────────────────────────
 def handle(raw_msg: str):
+    claimed = ""
     try:
         msg    = json.loads(raw_msg)
         req_id = msg.get("id", "unknown")
@@ -985,9 +2830,24 @@ def handle(raw_msg: str):
             log(f"RO_DENIED cmd={cmd} req_id={req_id}")
             publish(req_id, "error", {"error": "Token de solo lectura: comando de control no permitido"})
             return
-        publish(req_id, "ok", fn(args))
+        if cmd not in DEDUP_EXEMPT and req_id not in ("", "unknown"):
+            state, prev = _seen_claim(req_id)
+            if state == "running":
+                log(f"DUP_RUNNING cmd={cmd} req_id={req_id}")
+                return
+            if state == "done":
+                log(f"DUP_REPUBLISH cmd={cmd} req_id={req_id}")
+                publish(req_id, prev[0], prev[1])
+                return
+            claimed = req_id
+        data = fn(args)
+        if claimed:
+            _seen_done(claimed, "ok", data)
+        publish(req_id, "ok", data)
     except Exception as e:
         log(f"HANDLE_ERROR {e}")
+        if claimed:
+            _seen_done(claimed, "error", {"error": str(e)})
         try:
             publish(json.loads(raw_msg).get("id", "unknown"), "error", {"error": str(e)})
         except Exception:
@@ -1031,4 +2891,5 @@ if __name__ == "__main__":
     _load_custom_alerts()
     _load_metrics()
     threading.Thread(target=monitoring_thread, daemon=True, name="monitor").start()
+    threading.Thread(target=claude_events_thread, daemon=True, name="claude-events").start()
     listen_loop()
